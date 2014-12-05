@@ -30,6 +30,7 @@
         '../../base/base.gyp:base',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../../skia/skia.gyp:skia',
+        '../../third_party/khronos/khronos.gyp:khronos_headers',
         '../base/ui_base.gyp:ui_base',
         '../gfx/gfx.gyp:gfx_geometry',
         '../gl/gl.gyp:gl',
@@ -45,6 +46,9 @@
       ],
       'defines': [
         'SURFACE_IMPLEMENTATION',
+      ],
+      'export_dependent_settings': [
+        '../../third_party/khronos/khronos.gyp:khronos_headers',
       ],
     },
   ],
