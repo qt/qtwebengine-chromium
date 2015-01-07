@@ -514,7 +514,10 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // in correct encoding.
     setlocale(LC_ALL, "");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers) {
+      SetupSignalHandlers();
+    }
+
     g_fds->Set(kPrimaryIPCChannel,
                kPrimaryIPCChannel + base::GlobalDescriptors::kBaseDescriptor);
 #endif  // !OS_ANDROID && !OS_IOS
