@@ -564,7 +564,10 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // in correct encoding.
     setlocale(LC_ALL, "");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers) {
+      SetupSignalHandlers();
+    }
+
     g_fds->Set(kMojoIPCChannel,
                kMojoIPCChannel + base::GlobalDescriptors::kBaseDescriptor);
 

@@ -36,7 +36,8 @@ struct ContentMainParams {
         argc(0),
         argv(NULL),
 #endif
-        ui_task(NULL) {
+        ui_task(NULL),
+        setup_signal_handlers(true) {
   }
 
   ContentMainDelegate* delegate;
