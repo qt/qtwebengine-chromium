@@ -32,7 +32,8 @@ struct ContentMainParams {
         argc(0),
         argv(NULL),
 #endif
-        ui_task(NULL) {
+        ui_task(NULL),
+        setup_signal_handlers(true) {
   }
 
   ContentMainDelegate* delegate;
@@ -51,6 +52,8 @@ struct ContentMainParams {
   // Used by browser_tests. If non-null BrowserMain schedules this task to run
   // on the MessageLoop. It's owned by the test code.
   base::Closure* ui_task;
+
+  bool setup_signal_handlers;
 };
 
 #if defined(OS_ANDROID)
