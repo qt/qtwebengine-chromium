@@ -550,7 +550,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     // in correct encoding.
     setlocale(LC_ALL, "");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers) {
+      SetupSignalHandlers();
+    }
 
     base::GlobalDescriptors* g_fds = base::GlobalDescriptors::GetInstance();
     g_fds->Set(kPrimaryIPCChannel,
