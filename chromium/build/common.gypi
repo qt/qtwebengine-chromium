@@ -852,7 +852,7 @@
           'enable_settings_app%': 0,
         }],
 
-        ['OS=="linux" and target_arch=="arm" and chromeos==0', {
+        ['OS=="linux" and target_arch=="arm" and chromeos==0 and use_qt==0', {
           # Set some defaults for arm/linux chrome builds
           'use_allocator%': 'none',
           # sysroot needs to be an absolute path otherwise it generates
