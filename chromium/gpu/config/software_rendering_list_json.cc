@@ -835,20 +835,11 @@ LONG_STRING_CONST(
       },
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "contains",
-            "value": "Mesa"
-          },
-          "gl_renderer": {
-            "op": "contains",
-            "value": "Gallium"
-          }
+          "driver_vendor": "Mesa",
+          "gl_renderer": ".*Gallium.*"
         },
         {
-          "driver_vendor": {
-            "op": "contains",
-            "value": "llvmpipe"
-          }
+          "driver_vendor": ".*llvmpipe.*"
         }
       ],
       "features": [
