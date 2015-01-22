@@ -137,10 +137,13 @@ bool LoadAVFoundationInternal() {
     return false;
   }
 
+#ifndef TOOLKIT_QT
   if (!command_line->HasSwitch(switches::kEnableAVFoundation)) {
     LogCaptureApi(CAPTURE_API_QTKIT_DUE_TO_NO_FLAG);
     return false;
   }
+#endif
+
   const bool ret = [AVFoundationGlue::AVFoundationBundle() load];
   LogCaptureApi(ret ? CAPTURE_API_AVFOUNDATION_LOADED_OK
                     : CAPTURE_API_QTKIT_DUE_TO_AVFOUNDATION_LOAD_ERROR);

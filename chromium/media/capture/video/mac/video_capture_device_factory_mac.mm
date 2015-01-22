@@ -19,7 +19,9 @@
 #import "media/capture/video/mac/video_capture_device_avfoundation_mac.h"
 #import "media/capture/video/mac/video_capture_device_decklink_mac.h"
 #include "media/capture/video/mac/video_capture_device_mac.h"
+#ifndef TOOLKIT_QT
 #import "media/capture/video/mac/video_capture_device_qtkit_mac.h"
+#endif
 
 namespace media {
 
@@ -49,6 +51,7 @@ static bool IsDeviceBlacklisted(const VideoCaptureDevice::Name& name) {
   return is_device_blacklisted;
 }
 
+#ifndef TOOLKIT_QT
 static scoped_ptr<media::VideoCaptureDevice::Names>
 EnumerateDevicesUsingQTKit() {
   // TODO(erikchen): Remove ScopedTracker below once http://crbug.com/458397 is
@@ -72,6 +75,7 @@ EnumerateDevicesUsingQTKit() {
   }
   return device_names;
 }
+#endif
 
 static void RunDevicesEnumeratedCallback(
     const base::Callback<void(scoped_ptr<media::VideoCaptureDevice::Names>)>&
@@ -161,12 +165,14 @@ void VideoCaptureDeviceFactoryMac::EnumerateDeviceNames(const base::Callback<
         new VideoCaptureDevice::Names());
     GetDeviceNames(device_names.get());
     callback.Run(std::move(device_names));
+#ifndef TOOLKIT_QT
   } else {
     DVLOG(1) << "Enumerating video capture devices using QTKit";
     base::PostTaskAndReplyWithResult(
         ui_task_runner_.get(), FROM_HERE,
         base::Bind(&EnumerateDevicesUsingQTKit),
         base::Bind(&RunDevicesEnumeratedCallback, callback));
+#endif
   }
 }
 
