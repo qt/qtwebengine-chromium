@@ -122,9 +122,13 @@ bool AVFoundationGlue::IsAVFoundationSupported() {
   // Next in precedence is the enable-avfoundation flag.
   // TODO(vrk): Does this really need to be static?
   static bool should_enable_avfoundation =
+#ifdef TOOLKIT_QT
+      true;
+#else
       command_line->HasSwitch(switches::kEnableAVFoundation) ||
       base::FieldTrialList::FindFullName("AVFoundationMacVideoCapture")
           == "Enabled";
+#endif
   // Try to load AVFoundation. Save result in static bool to avoid loading
   // AVFoundationBundle every call.
   static bool loaded_successfully = [AVFoundationBundle() load];

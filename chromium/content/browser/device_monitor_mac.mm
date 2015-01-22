@@ -4,7 +4,9 @@
 
 #include "content/browser/device_monitor_mac.h"
 
+#ifndef TOOLKIT_QT
 #import <QTKit/QTKit.h>
+#endif
 
 #include <set>
 
@@ -133,6 +135,7 @@ void DeviceMonitorMacImpl::ConsolidateDevicesListAndNotify(
     monitor_->NotifyDeviceChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
 }
 
+#ifndef TOOLKIT_QT
 class QTKitMonitorImpl : public DeviceMonitorMacImpl {
  public:
   explicit QTKitMonitorImpl(content::DeviceMonitorMac* monitor);
@@ -212,6 +215,7 @@ void QTKitMonitorImpl::OnDeviceChanged() {
   }
   ConsolidateDevicesListAndNotify(snapshot_devices);
 }
+#endif
 
 // Forward declaration for use by CrAVFoundationDeviceObserver.
 class SuspendObserverDelegate;
@@ -530,9 +534,11 @@ void DeviceMonitorMac::StartMonitoring(
     DVLOG(1) << "Monitoring via AVFoundation";
     device_monitor_impl_.reset(new AVFoundationMonitorImpl(this,
                                                            device_task_runner));
+#ifndef TOOLKIT_QT
   } else {
     DVLOG(1) << "Monitoring via QTKit";
     device_monitor_impl_.reset(new QTKitMonitorImpl(this));
+#endif
   }
 }
 
