@@ -88,7 +88,7 @@ def resolve_cygpath(cygdrive_names):
 
 def read_idl_files_list_from_file(filename):
     """Similar to read_file_to_list, but also resolves cygpath."""
-    with open(filename) as input_file:
+    with open(abs(filename)) as input_file:
         file_names = sorted([os.path.realpath(line.rstrip('\n'))
                              for line in input_file])
         idl_file_names = [file_name for file_name in file_names
