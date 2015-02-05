@@ -328,12 +328,12 @@
     'conditions': [
       ['arm_float_abi=="hard"', {
         'boringssl_linux_arm_sources+': [
-          'linux-arm/crypto/chacha/chacha_vec.c',
+          'src/crypto/chacha/chacha_vec.c',
         ],
       },
       {
         'boringssl_linux_arm_sources+': [
-          'linux-arm/crypto/chacha/chacha_vec_arm.S',
+          'src/crypto/chacha/chacha_vec_arm.S',
         ],
       }],
     ],
