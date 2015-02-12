@@ -6,6 +6,7 @@
 
 #include "base/debug/trace_event.h"
 #include "cc/base/math_util.h"
+#include "cc/base/util.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame_metadata.h"
