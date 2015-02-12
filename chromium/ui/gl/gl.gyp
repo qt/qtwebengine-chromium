@@ -17,6 +17,7 @@
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/gpu/command_buffer/command_buffer.gyp:gles2_utils',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '<(DEPTH)/third_party/mesa/mesa.gyp:mesa_headers',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
@@ -29,7 +30,6 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
-        '<(DEPTH)/third_party/khronos',
         '<(gl_binding_output_dir)',
       ],
       'direct_dependent_settings': {
@@ -188,9 +188,6 @@
             '<(gl_binding_output_dir)/gl_bindings_autogen_egl.cc',
             '<(gl_binding_output_dir)/gl_bindings_autogen_egl.h',
           ],
-          'include_dirs': [
-            '<(DEPTH)/third_party/khronos',
-        ],
         }],
         ['OS in ("android", "linux")', {
           'sources': [

@@ -23,9 +23,6 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_cmd_helper',
       ],
-      'export_dependent_settings': [
-        '../third_party/khronos/khronos.gyp:khronos_headers',
-      ],
       'defines': [
         'GLES2_IMPL_IMPLEMENTATION',
       ],
@@ -48,6 +45,7 @@
         'command_buffer/command_buffer.gyp:gles2_utils',
         'gles2_implementation',
         'gpu',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../ui/gfx/gfx.gyp:gfx_geometry',
@@ -93,10 +91,12 @@
       'dependencies': [
         '../base/base.gyp:base',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         'command_buffer/command_buffer.gyp:gles2_utils',
         'command_buffer_client',
       ],
       'export_dependent_settings': [
+        '<(DEPTH)/third_party/khronos/khronos.gyp:khronos_headers',
         'command_buffer_client',
       ],
       'defines': [
@@ -509,9 +509,6 @@
           ],
           'includes': [
             'gpu_config.gypi',
-          ],
-          'export_dependent_settings': [
-            '../third_party/khronos/khronos.gyp:khronos_headers',
           ],
         },
       ],

@@ -47,9 +47,6 @@
       'defines': [
         'SURFACE_IMPLEMENTATION',
       ],
-      'export_dependent_settings': [
-        '../../third_party/khronos/khronos.gyp:khronos_headers',
-      ],
     },
   ],
 }

@@ -7,13 +7,8 @@
     '../base/base.gyp:base',
     '../mojo/public/mojo_public.gyp:mojo_application_bindings',
     '../skia/skia.gyp:skia',
+    '../third_party/khronos/khronos.gyp:khronos_headers',
     '../ui/gl/gl.gyp:gl',
-  ],
-  'dependencies': [
-    '../third_party/khronos/khronos.gyp:khronos_headers',
-  ],
-  'export_dependent_settings': [
-    '../third_party/khronos/khronos.gyp:khronos_headers',
   ],
   'sources': [
     'gpu/gpu_main.cc',
