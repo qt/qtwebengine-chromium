@@ -323,19 +323,8 @@
       'linux-arm/crypto/sha/sha1-armv4-large.S',
       'linux-arm/crypto/sha/sha256-armv4.S',
       'linux-arm/crypto/sha/sha512-armv4.S',
+      'src/crypto/chacha/chacha_vec_arm.S',
       'src/crypto/poly1305/poly1305_arm_asm.S',
-    ],
-    'conditions': [
-      ['arm_float_abi=="hard"', {
-        'boringssl_linux_arm_sources+': [
-          'src/crypto/chacha/chacha_vec.c',
-        ],
-      },
-      {
-        'boringssl_linux_arm_sources+': [
-          'src/crypto/chacha/chacha_vec_arm.S',
-        ],
-      }],
     ],
     'boringssl_linux_x86_sources': [
       'linux-x86/crypto/aes/aes-586.S',
