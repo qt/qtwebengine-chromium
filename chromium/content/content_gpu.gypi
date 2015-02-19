@@ -50,6 +50,11 @@
         ],
       },
     }],
+    ['qt_os=="mac"', {
+      'export_dependent_settings': [
+        '../third_party/khronos/khronos.gyp:khronos_headers',
+      ],
+    }],
     ['target_arch!="arm" and chromeos == 1', {
       'include_dirs': [
         '<(DEPTH)/third_party/libva',
