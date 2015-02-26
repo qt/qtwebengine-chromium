@@ -505,6 +505,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 
     if (params.setup_signal_handlers) {
       SetupSignalHandlers();
+    } else {
+        // Ignore SIGPIPE even if we are not resetting the other signal handlers.
+        CHECK(signal(SIGPIPE, SIG_IGN) != SIG_ERR);
     }
 
     g_fds->Set(kPrimaryIPCChannel,
