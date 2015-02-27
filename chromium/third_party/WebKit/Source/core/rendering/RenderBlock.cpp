@@ -613,11 +613,6 @@ void RenderBlock::splitBlocks(RenderBlock* fromBlock, RenderBlock* toBlock,
     if (!beforeChild && isAfterContent(lastChild()))
         beforeChild = lastChild();
 
-    // If we are moving inline children from |this| to cloneBlock, then we need
-    // to clear our line box tree.
-    if (beforeChild && childrenInline())
-        deleteLineBoxTree();
-
     // Now take all of the children from beforeChild to the end and remove
     // them from |this| and place them in the clone.
     moveChildrenTo(cloneBlock, beforeChild, 0, true);
@@ -788,7 +783,8 @@ RenderBlockFlow* RenderBlock::columnsBlockForSpanningElement(RenderObject* newCh
     // This function currently supports (1) and (2).
     RenderBlockFlow* columnsBlockAncestor = 0;
     if (!newChild->isText() && newChild->style()->columnSpan() && !newChild->isBeforeOrAfterContent()
-        && !newChild->isFloatingOrOutOfFlowPositioned() && !newChild->isInline() && !isAnonymousColumnSpanBlock()) {
+        && !newChild->isFloatingOrOutOfFlowPositioned() && !newChild->isInline() && !newChild->isTablePart()
+        && !isAnonymousColumnSpanBlock()) {
         columnsBlockAncestor = containingColumnsBlock(false);
         if (columnsBlockAncestor) {
             // Make sure that none of the parent ancestors have a continuation.
@@ -4347,6 +4343,26 @@ bool RenderBlock::recalcOverflowAfterStyleChange()
         layer()->scrollableArea()->updateAfterOverflowRecalc();
 
     return !hasOverflowClip();
+}
+
+// Called when a positioned object moves but doesn't necessarily change size.  A simplified layout is attempted
+// that just updates the object's position. If the size does change, the object remains dirty.
+bool RenderBlock::tryLayoutDoingPositionedMovementOnly()
+{
+    LayoutUnit oldWidth = logicalWidth();
+    LogicalExtentComputedValues computedValues;
+    logicalExtentAfterUpdatingLogicalWidth(logicalTop(), computedValues);
+    // If we shrink to fit our width may have changed, so we still need full layout.
+    if (oldWidth != computedValues.m_extent)
+        return false;
+    setLogicalWidth(computedValues.m_extent);
+    setLogicalLeft(computedValues.m_position);
+    setMarginStart(computedValues.m_margins.m_start);
+    setMarginEnd(computedValues.m_margins.m_end);
+
+    LayoutUnit oldHeight = logicalHeight();
+    updateLogicalHeight();
+    return !hasPercentHeightDescendants() || oldHeight == logicalHeight();
 }
 
 #if ENABLE(ASSERT)

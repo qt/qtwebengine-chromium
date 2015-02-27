@@ -2281,7 +2281,8 @@ void HTMLMediaElement::play()
         if (m_userGestureRequiredForPlay)
             return;
     } else if (m_userGestureRequiredForPlay) {
-        recordAutoplayMetric(AutoplayManualStart);
+        if (m_autoplayMediaCounted)
+            recordAutoplayMetric(AutoplayManualStart);
         m_userGestureRequiredForPlay = false;
     }
 

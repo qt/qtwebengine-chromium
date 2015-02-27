@@ -275,6 +275,14 @@ Node.prototype.parentNodeOrShadowHost = function()
 }
 
 /**
+ * @return {!Window}
+ */
+Node.prototype.window = function()
+{
+    return this.ownerDocument.defaultView;
+}
+
+/**
  * @param {string} query
  * @return {?Node}
  */

@@ -186,6 +186,9 @@ public:
 
     virtual bool avoidsFloats() const override;
 
+    using RenderBoxModelObject::moveChildrenTo;
+    virtual void moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert = false) override;
+
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
         if (isHorizontalWritingMode())

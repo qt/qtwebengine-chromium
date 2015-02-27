@@ -129,7 +129,11 @@ public:
     OscillatorNode* createOscillator();
     PeriodicWave* createPeriodicWave(DOMFloat32Array* real, DOMFloat32Array* imag, ExceptionState&);
 
-    // When a source node has no more processing to do (has finished playing), then it tells the context to dereference it.
+    // When a source node has started processing and needs to be protected,
+    // this method tells the context to protect the node.
+    void notifyNodeStartedProcessing(AudioNode*);
+    // When a source node has no more processing to do (has finished playing),
+    // this method tells the context to dereference the node.
     void notifyNodeFinishedProcessing(AudioNode*);
 
     // Called at the start of each render quantum.
@@ -273,7 +277,7 @@ private:
     // Oilpan: This Vector holds connection references. We must call
     // AudioNode::makeConnection when we add an AudioNode to this, and must call
     // AudioNode::breakConnection() when we remove an AudioNode from this.
-    Member<HeapVector<Member<AudioNode>>> m_referencedNodes;
+    HeapVector<Member<AudioNode>> m_referencedNodes;
 
     class AudioNodeDisposer {
     public:
@@ -326,6 +330,7 @@ private:
     unsigned m_connectionCount;
 
     // Graph locking.
+    bool m_didInitializeContextGraphMutex;
     RecursiveMutex m_contextGraphMutex;
     volatile ThreadIdentifier m_audioThread;
 

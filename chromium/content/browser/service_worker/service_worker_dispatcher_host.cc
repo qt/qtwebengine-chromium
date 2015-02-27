@@ -31,6 +31,10 @@ namespace content {
 
 namespace {
 
+const char kNoDocumentURLErrorMessage[] =
+    "No URL is associated with the caller's document.";
+const char kDisallowedURLErrorMessage[] =
+    "The URL is not supported.";
 const char kShutdownErrorMessage[] =
     "The Service Worker system has shutdown.";
 const char kDisabledErrorMessage[] = "The browser has disabled Service Worker.";
@@ -49,16 +53,8 @@ bool AllOriginsMatch(const GURL& url_a, const GURL& url_b, const GURL& url_c) {
 // consistent with Blink's
 // SecurityOrigin::canAccessFeatureRequiringSecureOrigin.
 bool OriginCanAccessServiceWorkers(const GURL& url) {
-  return url.SchemeIsSecure() || net::IsLocalhost(url.host());
-}
-
-bool CheckPatternIsUnderTheScriptDirectory(const GURL& pattern,
-                                           const GURL& script_url) {
-  size_t slash_pos = script_url.spec().rfind('/');
-  if (slash_pos == std::string::npos)
-    return false;
-  return pattern.spec().compare(
-             0, slash_pos + 1, script_url.spec(), 0, slash_pos + 1) == 0;
+  return url.SchemeIsHTTPOrHTTPS() &&
+      (url.SchemeIsSecure() || net::IsLocalhost(url.host()));
 }
 
 bool CanRegisterServiceWorker(const GURL& document_url,
@@ -69,7 +65,8 @@ bool CanRegisterServiceWorker(const GURL& document_url,
   DCHECK(script_url.is_valid());
   return AllOriginsMatch(document_url, pattern, script_url) &&
          OriginCanAccessServiceWorkers(document_url) &&
-         CheckPatternIsUnderTheScriptDirectory(pattern, script_url);
+         OriginCanAccessServiceWorkers(pattern) &&
+         OriginCanAccessServiceWorkers(script_url);
 }
 
 bool CanUnregisterServiceWorker(const GURL& document_url,
@@ -77,7 +74,8 @@ bool CanUnregisterServiceWorker(const GURL& document_url,
   DCHECK(document_url.is_valid());
   DCHECK(pattern.is_valid());
   return document_url.GetOrigin() == pattern.GetOrigin() &&
-         OriginCanAccessServiceWorkers(document_url);
+         OriginCanAccessServiceWorkers(document_url) &&
+         OriginCanAccessServiceWorkers(pattern);
 }
 
 bool CanGetRegistration(const GURL& document_url,
@@ -85,7 +83,8 @@ bool CanGetRegistration(const GURL& document_url,
   DCHECK(document_url.is_valid());
   DCHECK(given_document_url.is_valid());
   return document_url.GetOrigin() == given_document_url.GetOrigin() &&
-         OriginCanAccessServiceWorkers(document_url);
+         OriginCanAccessServiceWorkers(document_url) &&
+         OriginCanAccessServiceWorkers(given_document_url);
 }
 
 }  // namespace
@@ -287,9 +286,37 @@ void ServiceWorkerDispatcherHost::OnRegisterServiceWorker(
     return;
   }
 
+  // TODO(ksakamoto): Currently, document_url is empty if the document is in an
+  // IFRAME using frame.contentDocument.write(...). We can remove this check
+  // once crbug.com/439697 is fixed.
+  if (provider_host->document_url().is_empty()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id,
+        request_id,
+        WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kNoDocumentURLErrorMessage)));
+    return;
+  }
+
   if (!CanRegisterServiceWorker(
       provider_host->document_url(), pattern, script_url)) {
-    BadMessageReceived();
+    // TODO(kinuko): Change this back to BadMessageReceived() once we start
+    // to check these in the renderer too. (http://crbug.com/453982)
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kServiceWorkerRegisterErrorPrefix) +
+            base::ASCIIToUTF16(kDisallowedURLErrorMessage)));
+    return;
+  }
+
+  std::string error_message;
+  if (!ServiceWorkerUtils::IsPathRestrictionSatisfied(
+          pattern, script_url, &error_message)) {
+    Send(new ServiceWorkerMsg_ServiceWorkerRegistrationError(
+        thread_id,
+        request_id,
+        WebServiceWorkerError::ErrorTypeSecurity,
+        base::UTF8ToUTF16(error_message)));
     return;
   }
 
@@ -354,8 +381,23 @@ void ServiceWorkerDispatcherHost::OnUnregisterServiceWorker(
     return;
   }
 
+  // TODO(ksakamoto): This check can be removed once crbug.com/439697 is fixed.
+  if (provider_host->document_url().is_empty()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerUnregistrationError(
+        thread_id,
+        request_id,
+        WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kNoDocumentURLErrorMessage)));
+    return;
+  }
+
   if (!CanUnregisterServiceWorker(provider_host->document_url(), pattern)) {
-    BadMessageReceived();
+    // TODO(kinuko): Change this back to BadMessageReceived() once we start
+    // to check these in the renderer too. (http://crbug.com/453982)
+    Send(new ServiceWorkerMsg_ServiceWorkerUnregistrationError(
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kServiceWorkerUnregisterErrorPrefix) +
+            base::ASCIIToUTF16(kDisallowedURLErrorMessage)));
     return;
   }
 
@@ -417,8 +459,23 @@ void ServiceWorkerDispatcherHost::OnGetRegistration(
     return;
   }
 
+  // TODO(ksakamoto): This check can be removed once crbug.com/439697 is fixed.
+  if (provider_host->document_url().is_empty()) {
+    Send(new ServiceWorkerMsg_ServiceWorkerGetRegistrationError(
+        thread_id,
+        request_id,
+        WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kNoDocumentURLErrorMessage)));
+    return;
+  }
+
   if (!CanGetRegistration(provider_host->document_url(), document_url)) {
-    BadMessageReceived();
+    // TODO(kinuko): Change this back to BadMessageReceived() once we start
+    // to check these in the renderer too. (http://crbug.com/453982)
+    Send(new ServiceWorkerMsg_ServiceWorkerGetRegistrationError(
+        thread_id, request_id, WebServiceWorkerError::ErrorTypeSecurity,
+        base::ASCIIToUTF16(kServiceWorkerGetRegistrationErrorPrefix) +
+            base::ASCIIToUTF16(kDisallowedURLErrorMessage)));
     return;
   }
 

@@ -112,6 +112,11 @@ login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
           ['oauth-enroll-focus-on-error'],
           loadTimeData.getString('oauthEnrollCancelAutoEnrollmentGoBack'),
           function() {
+            $('oauth-enroll-back-button').disabled = true;
+
+            $('oauth-enroll-back-button').
+                classList.add('preserve-disabled-state');
+
             chrome.send('oauthEnrollClose', ['cancel']);
           });
 
@@ -146,6 +151,7 @@ login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
     onBeforeShow: function(data) {
       var url = data.signin_url;
       url += '?gaiaUrl=' + encodeURIComponent(data.gaiaUrl);
+      url += '&needPassword=0';
       this.signInUrl_ = url;
       var modes = ['manual', 'forced', 'auto'];
       for (var i = 0; i < modes.length; ++i) {
@@ -281,6 +287,14 @@ login.createScreen('OAuthEnrollmentScreen', 'oauth-enrollment', function() {
               msg.domain);
         }
         this.classList.toggle('saml', msg.isSAML);
+      }
+
+      if (msg.method == 'loginUILoaded' && this.currentStep_ == STEP_SIGNIN) {
+        $('oauth-enroll-back-button').disabled = false;
+
+        $('oauth-enroll-back-button').
+            classList.remove('preserve-disabled-state');
+
         chrome.send('frameLoadingCompleted', [0]);
       }
 

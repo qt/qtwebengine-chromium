@@ -2456,16 +2456,9 @@ bool RenderBox::logicalHeightComputesAsNone(SizeType sizeType) const
     if (logicalHeight == initialLogicalHeight)
         return true;
 
-    if (!logicalHeight.isPercent() || isOutOfFlowPositioned())
-        return false;
-
-    // Anonymous block boxes are ignored when resolving percentage values that would refer to it:
-    // the closest non-anonymous ancestor box is used instead.
-    RenderBlock* containingBlock = this->containingBlock();
-    while (containingBlock->isAnonymous())
-        containingBlock = containingBlock->containingBlock();
-
-    return containingBlock->hasAutoHeightOrContainingBlockWithAutoHeight();
+    if (RenderBlock* cb = containingBlockForAutoHeightDetection(logicalHeight))
+        return cb->hasAutoHeightOrContainingBlockWithAutoHeight();
+    return false;
 }
 
 LayoutUnit RenderBox::computeReplacedLogicalHeightRespectingMinMaxHeight(LayoutUnit logicalHeight) const
@@ -3812,8 +3805,7 @@ PaintInvalidationReason RenderBox::paintInvalidationReason(const RenderLayerMode
     if (hasNonCompositedScrollbars())
         return PaintInvalidationBorderBoxChange;
 
-    // FIXME: Implement correct incremental invalidation for visual overflowing effects.
-    if (style()->hasVisualOverflowingEffect() || style()->hasAppearance() || style()->hasFilter())
+    if (style()->hasVisualOverflowingEffect() || style()->hasAppearance() || style()->hasFilter() || style()->resize() != RESIZE_NONE)
         return PaintInvalidationBorderBoxChange;
 
     if (style()->hasBorderRadius()) {
@@ -4449,24 +4441,28 @@ LayoutSize RenderBox::computePreviousBorderBoxSize(const LayoutSize& previousBou
     return previousBoundsSize;
 }
 
-LayoutRect RenderBox::borderBoxAfterUpdatingLogicalWidth(const LayoutUnit& newLogicalTop)
+void RenderBox::logicalExtentAfterUpdatingLogicalWidth(const LayoutUnit& newLogicalTop, RenderBox::LogicalExtentComputedValues& computedValues)
 {
     // FIXME: None of this is right for perpendicular writing-mode children.
     LayoutUnit oldLogicalWidth = logicalWidth();
+    LayoutUnit oldLogicalLeft = logicalLeft();
     LayoutUnit oldMarginLeft = marginLeft();
     LayoutUnit oldMarginRight = marginRight();
     LayoutUnit oldLogicalTop = logicalTop();
 
     setLogicalTop(newLogicalTop);
     updateLogicalWidth();
-    LayoutRect borderBox = borderBoxRect();
+
+    computedValues.m_extent = logicalWidth();
+    computedValues.m_position = logicalLeft();
+    computedValues.m_margins.m_start = marginStart();
+    computedValues.m_margins.m_end = marginEnd();
 
     setLogicalTop(oldLogicalTop);
     setLogicalWidth(oldLogicalWidth);
+    setLogicalLeft(oldLogicalLeft);
     setMarginLeft(oldMarginLeft);
     setMarginRight(oldMarginRight);
-
-    return borderBox;
 }
 
 } // namespace blink

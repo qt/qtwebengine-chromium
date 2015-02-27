@@ -237,6 +237,7 @@ private:
     CSSStyleRule* insertCSSOMRuleInMediaRule(CSSMediaRule*, const SourceRange&, const String& ruleText, ExceptionState&);
     CSSStyleRule* insertCSSOMRuleBySourceRange(const SourceRange&, const String& ruleText, ExceptionState&);
     bool verifyRuleText(const String& ruleText);
+    bool verifySelectorText(const String& selectorText);
     unsigned ruleIndexByStyle(CSSStyleDeclaration*) const;
     String sourceMapURL() const;
     String sourceURL() const;

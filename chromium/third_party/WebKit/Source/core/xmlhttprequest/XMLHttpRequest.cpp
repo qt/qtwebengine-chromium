@@ -208,6 +208,7 @@ XMLHttpRequest::XMLHttpRequest(ExecutionContext* context, PassRefPtr<SecurityOri
     , m_uploadComplete(false)
     , m_sameOriginRequest(true)
     , m_downloadingToFile(false)
+    , m_responseTextOverflow(false)
 {
 #ifndef NDEBUG
     xmlHttpRequestCounter.increment();
@@ -1361,8 +1362,13 @@ void XMLHttpRequest::didFinishLoadingInternal()
         return;
     }
 
-    if (m_decoder)
-        m_responseText = m_responseText.concatenateWith(m_decoder->flush());
+    if (m_decoder) {
+        auto text = m_decoder->flush();
+        if (!text.isEmpty() && !m_responseTextOverflow) {
+            m_responseText = m_responseText.concatenateWith(text);
+            m_responseTextOverflow = m_responseText.isEmpty();
+        }
+    }
 
     if (m_responseLegacyStream)
         m_responseLegacyStream->finalize();
@@ -1538,7 +1544,11 @@ void XMLHttpRequest::didReceiveData(const char* data, unsigned len)
         if (!m_decoder)
             m_decoder = createDecoder();
 
-        m_responseText = m_responseText.concatenateWith(m_decoder->decode(data, len));
+        auto text = m_decoder->decode(data, len);
+        if (!text.isEmpty() && !m_responseTextOverflow) {
+            m_responseText = m_responseText.concatenateWith(text);
+            m_responseTextOverflow = m_responseText.isEmpty();
+        }
     } else if (m_responseTypeCode == ResponseTypeArrayBuffer || m_responseTypeCode == ResponseTypeBlob) {
         // Buffer binary data.
         if (!m_binaryResponseBuilder)

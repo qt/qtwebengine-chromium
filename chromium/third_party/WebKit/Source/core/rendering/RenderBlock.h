@@ -369,7 +369,8 @@ private:
 
     Node* nodeForHitTest() const;
 
-private:
+    bool tryLayoutDoingPositionedMovementOnly();
+
     virtual bool avoidsFloats() const override { return true; }
 
     bool hitTestColumns(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);

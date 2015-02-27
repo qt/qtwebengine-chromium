@@ -120,6 +120,7 @@
 #include "core/frame/History.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/DocumentNameCollection.h"
@@ -5289,7 +5290,7 @@ void Document::adjustFloatQuadsForScrollAndAbsoluteZoom(Vector<FloatQuad>& quads
     if (!view())
         return;
 
-    LayoutRect visibleContentRect = view()->visibleContentRect();
+    LayoutRect visibleContentRect = view()->visualViewportRect();
     for (size_t i = 0; i < quads.size(); ++i) {
         quads[i].move(-FloatSize(visibleContentRect.x().toFloat(), visibleContentRect.y().toFloat()));
         adjustFloatQuadForAbsoluteZoom(quads[i], renderer);
@@ -5301,7 +5302,7 @@ void Document::adjustFloatRectForScrollAndAbsoluteZoom(FloatRect& rect, RenderOb
     if (!view())
         return;
 
-    LayoutRect visibleContentRect = view()->visibleContentRect();
+    LayoutRect visibleContentRect = view()->visualViewportRect();
     rect.move(-FloatSize(visibleContentRect.x().toFloat(), visibleContentRect.y().toFloat()));
     adjustFloatRectForAbsoluteZoom(rect, renderer);
 }

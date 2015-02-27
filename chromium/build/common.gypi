@@ -2298,6 +2298,11 @@
         'arm_thumb%': 1,
       }],
 
+      # Set default compiler flags depending on MIPS architecture variant.
+      ['target_arch=="mipsel" and mips_arch_variant=="r2" and android_webview_build==0', {
+        'mips_fpu_mode%': 'fp32',
+      }],
+
       ['android_webview_build==1', {
         # The WebView build gets its cpu-specific flags from the Android build system.
         'arm_arch%': '',
@@ -2305,6 +2310,7 @@
         'arm_fpu%': '',
         'arm_float_abi%': '',
         'arm_thumb%': 0,
+        'mips_fpu_mode%': '',
       }],
 
       # Enable brlapi by default for chromeos.
@@ -2362,7 +2368,6 @@
       }, {
          'use_seccomp_bpf%': 0,
       }],
-
       # Set component build with LTO until all tests pass.
       # This also reduces link time.
       ['use_lto==1', {
@@ -2401,7 +2406,7 @@
     # Whether to allow building of the GPU-related isolates.
     'archive_gpu_tests%': 0,
 
-    # Whether to allow building of chromoting related isolates.
+     # Whether to allow building of chromoting related isolates.
     'archive_chromoting_tests%': 0,
   },
   'target_defaults': {
@@ -4675,19 +4680,10 @@
                   '--sysroot=<(android_ndk_sysroot)',
                   '-nostdlib',
                 ],
-                'variables': {
-                  'conditions': [
-                    ['target_arch=="arm" and arm_thumb==1', {
-                      'thumb_option%': '-mthumb',
-                    }, {
-                      'thumb_option%': '',
-                    }],
-                  ],
-                },
                 'libraries': [
                   '-l<(android_stlport_library)',
                   # Manually link the libgcc.a that the cross compiler uses.
-                  '<!(<(android_toolchain)/*-gcc <(thumb_option) -print-libgcc-file-name)',
+                  '<!(<(android_toolchain)/*-gcc -print-libgcc-file-name)',
                   '-lc',
                   '-ldl',
                   '-lm',
@@ -4752,12 +4748,8 @@
                 'cflags': [
                   '-isystem<(android_stlport_include)',
                 ],
-                'conditions': [
-                  ['target_arch=="arm" and arm_thumb==1', {
-                    'ldflags': [ '-L<(android_stlport_libs_dir)/thumb' ]
-                  }, {
-                    'ldflags': [ '-L<(android_stlport_libs_dir)' ]
-                  }],
+                'ldflags': [
+                  '-L<(android_stlport_libs_dir)',
                 ],
               }, { # else: android_webview_build!=0
                 'aosp_build_settings': {

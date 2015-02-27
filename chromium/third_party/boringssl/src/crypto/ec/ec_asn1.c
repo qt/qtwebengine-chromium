@@ -373,6 +373,9 @@ err:
       EC_KEY_free(ret);
     }
     ret = NULL;
+    if (a) {
+      *a = ret;
+    }
   }
 
   if (priv_key) {

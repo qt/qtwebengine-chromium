@@ -1733,11 +1733,15 @@ void WebViewImpl::didUpdateTopControls()
 
         pinchViewport.setTopControlsAdjustment(topControlsViewportAdjustment);
 
+// On ChromeOS the pinch viewport can change size independent of the layout viewport due to the
+// on screen keyboard so we should only set the FrameView adjustment on Android.
+#if OS(ANDROID)
         // Shrink the FrameView by the amount that will maintain the aspect-ratio with the PinchViewport.
         float aspectRatio = pinchViewport.visibleRect().width() / pinchViewport.visibleRect().height();
         float newHeight = view->unscaledVisibleContentSize(ExcludeScrollbars).width() / aspectRatio;
         float adjustment = newHeight - view->unscaledVisibleContentSize(ExcludeScrollbars).height();
         view->setTopControlsViewportAdjustment(adjustment);
+#endif
     }
 }
 
@@ -1782,6 +1786,9 @@ void WebViewImpl::resize(const WebSize& newSize)
     m_fullscreenController->updateSize();
 
     if (settings()->viewportEnabled()) {
+        PinchViewport& pinchViewport = page()->frameHost().pinchViewport();
+        FloatPoint viewportOffsetBeforeResize = pinchViewport.visibleRectInDocument().location();
+
         // Relayout immediately to recalculate the minimum scale limit.
         if (view->needsLayout())
             view->layout();
@@ -1798,6 +1805,9 @@ void WebViewImpl::resize(const WebSize& newSize)
             viewportAnchor.computeOrigins(*view, pinchViewportSize,
                 mainFrameOrigin, pinchViewportOrigin);
             scrollAndRescaleViewports(newPageScaleFactor, mainFrameOrigin, pinchViewportOrigin);
+        } else {
+            FloatSize deltaFromResize = viewportOffsetBeforeResize - pinchViewport.visibleRectInDocument().location();
+            pinchViewport.move(FloatPoint(deltaFromResize));
         }
     }
 

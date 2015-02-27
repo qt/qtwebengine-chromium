@@ -255,7 +255,7 @@ deps = {
   'src/media/cdm/ppapi/api':
     (Var("git.chromium.org")) + '/chromium/cdm.git@f924b6382b05c57677455ac40f210b33809591ef',
   'src/third_party/skia':
-    (Var("git.chromium.org")) + '/skia.git@2e74f758f8379338f75898f28128ade1dfcf3702',
+    (Var("git.chromium.org")) + '/skia.git@020e13cd605bcc03b00669994e31fef994c63838',
   'src/tools/swarming_client':
     (Var("git.chromium.org")) + '/external/swarming.client.git@1f8ba359e84dc7f26b1ba286dfb4e28674efbff4',
   'src/chrome/test/data/perf/frame_rate/content':
@@ -299,7 +299,7 @@ deps = {
   'src/sdch/open-vcdiff':
     (Var("git.chromium.org")) + '/external/open-vcdiff.git@438f2a5be6d809bc21611a94cd37bfc8c28ceb33',
   'src/third_party/angle':
-    (Var("git.chromium.org")) + '/angle/angle.git@019fa9340e580e5836a9b9dc7cede4766cd090df',
+    (Var("git.chromium.org")) + '/angle/angle.git@d77bd1632e4c3bbe326be4fb32fe6c53187cd5dd',
   'build/third_party/lighttpd':
     '/trunk/deps/third_party/lighttpd@58968',
   'src/buildtools':
@@ -327,7 +327,7 @@ deps = {
   'src/third_party/libphonenumber/src/test':
     (Var("git.chromium.org")) + '/external/libphonenumber/cpp/test.git@883b7b86541d64b2691f7c0e65facb0b08db73e8',
   'src/third_party/pdfium':
-    'https://pdfium.googlesource.com/pdfium.git@4dc95e74e1acc75f4eab08bc771874cd2a9c3a9b',
+    'https://pdfium.googlesource.com/pdfium.git@12e9c8c8b577eb8de6b600b5f19d8b1dec411f77',
   'src/third_party/libphonenumber/src/phonenumbers':
     (Var("git.chromium.org")) + '/external/libphonenumber/cpp/src/phonenumbers.git@8d8b5b3b2035197795d27573d4cf566b5d9ad689',
   'src/third_party/libphonenumber/src/resources':
@@ -339,13 +339,13 @@ deps = {
   'src/third_party/safe_browsing/testing':
     (Var("git.chromium.org")) + '/external/google-safe-browsing/testing.git@9d7e8064f3ca2e45891470c9b5b1dce54af6a9d6',
   'src/third_party/ffmpeg':
-    (Var("git.chromium.org")) + '/chromium/third_party/ffmpeg.git@399d38b9baba60763e1db26be5d6a8577a4276f4',
+    (Var("git.chromium.org")) + '/chromium/third_party/ffmpeg.git@4982e01ab3185c0f3279a0fd4772fd4e1c273eb2',
   'build/scripts/command_wrapper/bin':
     '/trunk/tools/command_wrapper/bin@135178',
   'src/third_party/pyftpdlib/src':
     (Var("git.chromium.org")) + '/external/pyftpdlib.git@2be6d65e31c7ee6320d059f581f05ae8d89d7e45',
   'src/third_party/icu':
-    (Var("git.chromium.org")) + '/chromium/deps/icu52.git@dd727641e190d60e4593bcb3a35c7f51eb4925c5',
+    (Var("git.chromium.org")) + '/chromium/deps/icu52.git@866ff696e9022a6000afbab516fba62cfa306075',
   'src/third_party/opus/src':
     (Var("git.chromium.org")) + '/chromium/deps/opus.git@cae696156f1e60006e39821e79a1811ae1933c69',
   'src/tools/grit':
@@ -355,7 +355,7 @@ deps = {
   'src/third_party/webpagereplay':
     (Var("git.chromium.org")) + '/external/web-page-replay.git@2f7b704b8b567983c040f555d3e46f9766db8e87',
   'src/third_party/WebKit':
-    (Var("git.chromium.org")) + '/chromium/blink.git@045e2df1e88cddebce6d9690812b5233c896e201',
+    (Var("git.chromium.org")) + '/chromium/blink.git@1adeed78e8cca8cc16b2925139be73ba9867dcb1',
   'src/breakpad/src':
     (Var("git.chromium.org")) + '/external/google-breakpad/src.git@f37b59821ecbd69c54f3388026d2e98cd8b2fba2',
   'src/third_party/py_trace_event/src':
@@ -369,13 +369,13 @@ deps = {
   'src/testing/gtest':
     (Var("git.chromium.org")) + '/external/googletest.git@4650552ff637bb44ecf7784060091cbed3252211',
   'src/v8':
-    (Var("git.chromium.org")) + '/v8/v8.git@d2f16971bdcc2899e0939815005f43253e3e7410',
+    (Var("git.chromium.org")) + '/v8/v8.git@9dc11c782b183920f94a64fb7fbfd9c63864525e',
   'src/third_party/pywebsocket/src':
     (Var("git.chromium.org")) + '/external/pywebsocket/src.git@cb349e87ddb30ff8d1fa1a89be39cec901f4a29c',
   'src/third_party/libvpx':
-    (Var("git.chromium.org")) + '/chromium/deps/libvpx.git@2e5ced5fd62a73f4f5687ab19520b3aad1c53f6f',
+    (Var("git.chromium.org")) + '/chromium/deps/libvpx.git@715db78484f91a05fbd0584c0ed6e9d2ffc9be06',
   'src/third_party/boringssl/src':
-    'https://boringssl.googlesource.com/boringssl.git@817ec3462e246b8301a73e44854e2bb3df90d5e6',
+    'https://boringssl.googlesource.com/boringssl.git@54e455157a6e1899eb6fef9440d2410cb7fedeff',
   'src/third_party/swig/Lib':
     (Var("git.chromium.org")) + '/chromium/deps/swig/Lib.git@f2a695d52e61e6a8d967731434f165ed400f0d69'
 }

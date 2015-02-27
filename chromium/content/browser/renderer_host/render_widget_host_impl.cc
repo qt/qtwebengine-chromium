@@ -89,10 +89,6 @@ namespace {
 
 bool g_check_for_pending_resize_ack = true;
 
-const size_t kBrowserCompositeLatencyHistorySize = 60;
-const double kBrowserCompositeLatencyEstimationPercentile = 90.0;
-const double kBrowserCompositeLatencyEstimationSlack = 1.1;
-
 typedef std::pair<int32, int32> RenderWidgetHostID;
 typedef base::hash_map<RenderWidgetHostID, RenderWidgetHostImpl*>
     RoutingIDWidgetMap;
@@ -167,12 +163,10 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       surface_id_(0),
       is_loading_(false),
       is_hidden_(hidden),
-      is_fullscreen_(false),
       repaint_ack_pending_(false),
       resize_ack_pending_(false),
       screen_info_out_of_date_(false),
-      top_controls_layout_height_(0.f),
-      should_auto_resize_(false),
+      auto_resize_enabled_(false),
       waiting_for_screen_rects_ack_(false),
       needs_repainting_on_restore_(false),
       is_unresponsive_(false),
@@ -189,7 +183,6 @@ RenderWidgetHostImpl::RenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
       has_touch_handler_(false),
       last_input_number_(static_cast<int64>(GetProcess()->GetID()) << 32),
       next_browser_snapshot_id_(1),
-      browser_composite_latency_history_(kBrowserCompositeLatencyHistorySize),
       weak_factory_(this) {
   CHECK(delegate_);
   if (routing_id_ == MSG_ROUTING_NONE) {
@@ -362,7 +355,8 @@ void RenderWidgetHostImpl::ResetSizeAndRepaintPendingFlags() {
         "renderer_host", "RenderWidgetHostImpl::repaint_ack_pending_", this);
   }
   repaint_ack_pending_ = false;
-  last_requested_size_.SetSize(0, 0);
+  if (old_resize_params_)
+    old_resize_params_->new_size = gfx::Size();
 }
 
 void RenderWidgetHostImpl::SendScreenRects() {
@@ -564,61 +558,80 @@ void RenderWidgetHostImpl::WasShown(const ui::LatencyInfo& latency_info) {
   WasResized();
 }
 
-void RenderWidgetHostImpl::WasResized() {
-  // Skip if the |delegate_| has already been detached because
-  // it's web contents is being deleted.
-  if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
-      !renderer_initialized_ || should_auto_resize_ || !delegate_) {
-    return;
-  }
-
-  gfx::Size new_size(view_->GetRequestedRendererSize());
-
-  gfx::Size old_physical_backing_size = physical_backing_size_;
-  physical_backing_size_ = view_->GetPhysicalBackingSize();
-  bool was_fullscreen = is_fullscreen_;
-  is_fullscreen_ = IsFullscreen();
-  float old_top_controls_layout_height =
-      top_controls_layout_height_;
-  top_controls_layout_height_ =
-      view_->GetTopControlsLayoutHeight();
-  gfx::Size old_visible_viewport_size = visible_viewport_size_;
-  visible_viewport_size_ = view_->GetVisibleViewportSize();
-
-  bool size_changed = new_size != last_requested_size_;
-  bool side_payload_changed =
-      screen_info_out_of_date_ ||
-      old_physical_backing_size != physical_backing_size_ ||
-      was_fullscreen != is_fullscreen_ ||
-      old_top_controls_layout_height !=
-          top_controls_layout_height_ ||
-      old_visible_viewport_size != visible_viewport_size_;
-
-  if (!size_changed && !side_payload_changed)
-    return;
+void RenderWidgetHostImpl::GetResizeParams(
+    ViewMsg_Resize_Params* resize_params) {
+  *resize_params = ViewMsg_Resize_Params();
 
   if (!screen_info_) {
     screen_info_.reset(new blink::WebScreenInfo);
     GetWebScreenInfo(screen_info_.get());
   }
+  resize_params->screen_info = *screen_info_;
+  resize_params->resizer_rect = GetRootWindowResizerRect();
+
+  if (view_) {
+    resize_params->new_size = view_->GetRequestedRendererSize();
+    resize_params->physical_backing_size = view_->GetPhysicalBackingSize();
+    resize_params->top_controls_layout_height =
+        view_->GetTopControlsLayoutHeight();
+    resize_params->visible_viewport_size = view_->GetVisibleViewportSize();
+    resize_params->is_fullscreen = IsFullscreen();
+  }
+}
+
+void RenderWidgetHostImpl::SetInitialRenderSizeParams(
+    const ViewMsg_Resize_Params& resize_params) {
+  // We don't expect to receive an ACK when the requested size or the physical
+  // backing size is empty, or when the main viewport size didn't change.
+  if (!resize_params.new_size.IsEmpty() &&
+      !resize_params.physical_backing_size.IsEmpty()) {
+    resize_ack_pending_ = g_check_for_pending_resize_ack;
+  }
+
+  old_resize_params_ =
+      make_scoped_ptr(new ViewMsg_Resize_Params(resize_params));
+}
+
+void RenderWidgetHostImpl::WasResized() {
+  // Skip if the |delegate_| has already been detached because
+  // it's web contents is being deleted.
+  if (resize_ack_pending_ || !process_->HasConnection() || !view_ ||
+      !renderer_initialized_ || auto_resize_enabled_ || !delegate_) {
+    return;
+  }
+
+  bool size_changed = true;
+  bool side_payload_changed = screen_info_out_of_date_;
+  scoped_ptr<ViewMsg_Resize_Params> params(new ViewMsg_Resize_Params);
+
+  GetResizeParams(params.get());
+  if (old_resize_params_) {
+    size_changed = old_resize_params_->new_size != params->new_size;
+    side_payload_changed =
+        side_payload_changed ||
+        old_resize_params_->physical_backing_size !=
+            params->physical_backing_size ||
+        old_resize_params_->is_fullscreen != params->is_fullscreen ||
+        old_resize_params_->top_controls_layout_height !=
+            params->top_controls_layout_height ||
+        old_resize_params_->visible_viewport_size !=
+            params->visible_viewport_size;
+  }
+
+  if (!size_changed && !side_payload_changed)
+    return;
 
   // We don't expect to receive an ACK when the requested size or the physical
   // backing size is empty, or when the main viewport size didn't change.
-  if (!new_size.IsEmpty() && !physical_backing_size_.IsEmpty() && size_changed)
+  if (!params->new_size.IsEmpty() && !params->physical_backing_size.IsEmpty() &&
+      size_changed) {
     resize_ack_pending_ = g_check_for_pending_resize_ack;
+  }
 
-  ViewMsg_Resize_Params params;
-  params.screen_info = *screen_info_;
-  params.new_size = new_size;
-  params.physical_backing_size = physical_backing_size_;
-  params.top_controls_layout_height = top_controls_layout_height_;
-  params.visible_viewport_size = visible_viewport_size_;
-  params.resizer_rect = GetRootWindowResizerRect();
-  params.is_fullscreen = is_fullscreen_;
-  if (!Send(new ViewMsg_Resize(routing_id_, params))) {
+  if (!Send(new ViewMsg_Resize(routing_id_, *params))) {
     resize_ack_pending_ = false;
   } else {
-    last_requested_size_ = new_size;
+    old_resize_params_.swap(params);
   }
 }
 
@@ -746,7 +759,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
   // size of the view_. (For auto-sized views, current_size_ is updated during
   // UpdateRect messages.)
   gfx::Size view_size = current_size_;
-  if (!should_auto_resize_) {
+  if (!auto_resize_enabled_) {
     // Get the desired size from the current view bounds.
     gfx::Rect view_rect = view_->GetViewBounds();
     if (view_rect.IsEmpty())
@@ -800,7 +813,7 @@ void RenderWidgetHostImpl::WaitForSurface() {
 
       // For auto-resized views, current_size_ determines the view_size and it
       // may have changed during the handling of an UpdateRect message.
-      if (should_auto_resize_)
+      if (auto_resize_enabled_)
         view_size = current_size_;
 
       // Break now if we got a backing store or accelerated surface of the
@@ -1380,8 +1393,12 @@ bool RenderWidgetHostImpl::IsFullscreen() const {
   return false;
 }
 
-void RenderWidgetHostImpl::SetShouldAutoResize(bool enable) {
-  should_auto_resize_ = enable;
+void RenderWidgetHostImpl::SetAutoResize(bool enable,
+                                         const gfx::Size& min_size,
+                                         const gfx::Size& max_size) {
+  auto_resize_enabled_ = enable;
+  min_size_for_auto_resize_ = min_size;
+  max_size_for_auto_resize_ = max_size;
 }
 
 void RenderWidgetHostImpl::Destroy() {
@@ -1505,11 +1522,6 @@ bool RenderWidgetHostImpl::OnSwapCompositorFrame(
   input_router_->OnViewUpdated(
       GetInputRouterViewFlagsFromCompositorFrameMetadata(frame->metadata));
 
-  for (size_t i = 0; i < frame->metadata.latency_info.size(); ++i) {
-    frame->metadata.latency_info[i].AddLatencyNumber(
-        ui::INPUT_EVENT_BROWSER_COMPOSITE_COMPONENT, 0, 0);
-  }
-
   if (view_) {
     view_->OnSwapCompositorFrame(output_surface_id, frame.Pass());
     view_->DidReceiveRendererFrame();
@@ -1581,7 +1593,7 @@ void RenderWidgetHostImpl::OnUpdateRect(
 
   DidUpdateBackingStore(params, paint_start);
 
-  if (should_auto_resize_) {
+  if (auto_resize_enabled_) {
     bool post_callback = new_auto_size_.IsEmpty();
     new_auto_size_ = params.view_size;
     if (post_callback) {
@@ -2073,7 +2085,7 @@ void RenderWidgetHostImpl::DelayedAutoResized() {
   // indicate that no callback is in progress (i.e. without this line
   // DelayedAutoResized will not get called again).
   new_auto_size_.SetSize(0, 0);
-  if (!should_auto_resize_)
+  if (!auto_resize_enabled_)
     return;
 
   OnRenderAutoResized(new_size);
@@ -2214,21 +2226,6 @@ void RenderWidgetHostImpl::FrameSwapped(const ui::LatencyInfo& latency_info) {
           1000000,
           100);
     }
-  }
-
-  ui::LatencyInfo::LatencyComponent gpu_swap_component;
-  if (!latency_info.FindLatency(
-          ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, &gpu_swap_component)) {
-    return;
-  }
-
-  ui::LatencyInfo::LatencyComponent composite_component;
-  if (latency_info.FindLatency(ui::INPUT_EVENT_BROWSER_COMPOSITE_COMPONENT,
-                               0,
-                               &composite_component)) {
-    base::TimeDelta delta =
-        gpu_swap_component.event_time - composite_component.event_time;
-    browser_composite_latency_history_.InsertSample(delta);
   }
 }
 
@@ -2401,17 +2398,6 @@ BrowserAccessibilityManager*
     RenderWidgetHostImpl::GetOrCreateRootBrowserAccessibilityManager() {
   return delegate_ ?
       delegate_->GetOrCreateRootBrowserAccessibilityManager() : NULL;
-}
-
-base::TimeDelta RenderWidgetHostImpl::GetEstimatedBrowserCompositeTime() {
-  // TODO(orglofch) remove lower bound on estimate once we're sure it won't
-  // cause regressions
-  return std::max(
-      browser_composite_latency_history_.Percentile(
-          kBrowserCompositeLatencyEstimationPercentile) *
-          kBrowserCompositeLatencyEstimationSlack,
-      base::TimeDelta::FromMicroseconds(
-          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60)));
 }
 
 #if defined(OS_WIN)

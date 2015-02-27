@@ -1887,8 +1887,9 @@ LayoutUnit RenderBlockFlow::getClearDelta(RenderBox* child, LayoutUnit logicalTo
             LayoutRect borderBox = child->borderBoxRect();
             LayoutUnit childLogicalWidthAtOldLogicalTopOffset = isHorizontalWritingMode() ? borderBox.width() : borderBox.height();
 
-            borderBox = child->borderBoxAfterUpdatingLogicalWidth(newLogicalTop);
-            LayoutUnit childLogicalWidthAtNewLogicalTopOffset = isHorizontalWritingMode() ? borderBox.width() : borderBox.height();
+            LogicalExtentComputedValues computedValues;
+            child->logicalExtentAfterUpdatingLogicalWidth(newLogicalTop, computedValues);
+            LayoutUnit childLogicalWidthAtNewLogicalTopOffset = computedValues.m_extent;
 
             if (childLogicalWidthAtNewLogicalTopOffset <= availableLogicalWidthAtNewLogicalTopOffset) {
                 // Even though we may not be moving, if the logical width did shrink because of the presence of new floats, then
@@ -2715,6 +2716,13 @@ bool RenderBlockFlow::avoidsFloats() const
     // Floats can't intrude into our box if we have a non-auto column count or width.
     // Note: we need to use RenderBox::avoidsFloats here since RenderBlock::avoidsFloats is always true.
     return RenderBox::avoidsFloats() || !style()->hasAutoColumnCount() || !style()->hasAutoColumnWidth();
+}
+
+void RenderBlockFlow::moveChildrenTo(RenderBoxModelObject* toBoxModelObject, RenderObject* startChild, RenderObject* endChild, RenderObject* beforeChild, bool fullRemoveInsert)
+{
+    if (childrenInline())
+        deleteLineBoxTree();
+    RenderBoxModelObject::moveChildrenTo(toBoxModelObject, startChild, endChild, beforeChild, fullRemoveInsert);
 }
 
 LayoutUnit RenderBlockFlow::logicalLeftSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const

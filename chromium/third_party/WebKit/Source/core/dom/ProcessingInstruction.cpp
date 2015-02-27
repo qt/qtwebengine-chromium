@@ -273,17 +273,20 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
     if (!insertionPoint->inDocument())
         return;
 
+    // No need to remove XSLStyleSheet from StyleEngine.
     if (m_isCSS)
         document().styleEngine()->removeStyleSheetCandidateNode(this);
     else if (m_isXSL)
         document().styleEngine()->removeXSLStyleSheet(this);
 
     RefPtrWillBeRawPtr<StyleSheet> removedSheet = m_sheet;
-
     if (m_sheet) {
         ASSERT(m_sheet->ownerNode() == this);
         clearSheet();
     }
+
+    // No need to remove pending sheets.
+    clearResource();
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document().isActive())

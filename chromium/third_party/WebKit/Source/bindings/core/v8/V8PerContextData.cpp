@@ -46,7 +46,6 @@ V8PerContextData::V8PerContextData(v8::Handle<v8::Context> context)
     , m_constructorMap(m_isolate)
     , m_contextHolder(adoptPtr(new gin::ContextHolder(m_isolate)))
     , m_context(m_isolate, context)
-    , m_customElementBindings(adoptPtr(new CustomElementBindingMap()))
     , m_activityLogger(0)
     , m_compiledPrivateScript(m_isolate)
 {
@@ -134,24 +133,8 @@ v8::Local<v8::Object> V8PerContextData::prototypeForType(const WrapperTypeInfo* 
 
 void V8PerContextData::addCustomElementBinding(CustomElementDefinition* definition, PassOwnPtr<CustomElementBinding> binding)
 {
-    ASSERT(!m_customElementBindings->contains(definition));
-    m_customElementBindings->add(definition, binding);
+    m_customElementBindings.append(binding);
 }
-
-void V8PerContextData::clearCustomElementBinding(CustomElementDefinition* definition)
-{
-    CustomElementBindingMap::iterator it = m_customElementBindings->find(definition);
-    ASSERT_WITH_SECURITY_IMPLICATION(it != m_customElementBindings->end());
-    m_customElementBindings->remove(it);
-}
-
-CustomElementBinding* V8PerContextData::customElementBinding(CustomElementDefinition* definition)
-{
-    CustomElementBindingMap::const_iterator it = m_customElementBindings->find(definition);
-    ASSERT_WITH_SECURITY_IMPLICATION(it != m_customElementBindings->end());
-    return it->value.get();
-}
-
 
 static v8::Handle<v8::Value> createDebugData(const char* worldName, int debugId, v8::Isolate* isolate)
 {

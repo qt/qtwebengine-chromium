@@ -464,6 +464,11 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaLive) {
   RunTest(FILE_PATH_LITERAL("aria-live.html"));
 }
 
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       AccessibilityAriaLiveWithContent) {
+  RunTest(FILE_PATH_LITERAL("aria-live-with-content.html"));
+}
+
 IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityAriaLog) {
   RunTest(FILE_PATH_LITERAL("aria-log.html"));
 }
@@ -783,7 +788,8 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputColor) {
   RunTest(FILE_PATH_LITERAL("input-color.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputDate) {
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+    DISABLED_AccessibilityInputDate) {
   RunTest(FILE_PATH_LITERAL("input-date.html"));
 }
 
@@ -822,7 +828,8 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputRadio) {
   RunTest(FILE_PATH_LITERAL("input-radio.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputRange) {
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+                       DISABLED_AccessibilityInputRange) {
   RunTest(FILE_PATH_LITERAL("input-range.html"));
 }
 
@@ -855,7 +862,8 @@ IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputTextValue) {
   RunTest(FILE_PATH_LITERAL("input-text-value.html"));
 }
 
-IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest, AccessibilityInputTime) {
+IN_PROC_BROWSER_TEST_F(DumpAccessibilityTreeTest,
+    DISABLED_AccessibilityInputTime) {
   RunTest(FILE_PATH_LITERAL("input-time.html"));
 }
 

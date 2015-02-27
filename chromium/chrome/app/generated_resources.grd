@@ -2560,11 +2560,9 @@ Even if you have downloaded files from this website before, the website might ha
       <message name="IDS_BLOCKED_JAVASCRIPT_LINK" desc="Link to JavaScript section of content blocking management dialog, displayed in bubble when a page tries to run JavaScript.">
         Manage JavaScript blocking...
       </message>
-      <if expr="is_macosx">
-        <message name="IDS_BLOCKED_PLUGINS_TITLE" desc="Bubble info header text when a page is not allowed to display plug-ins.">
-          The following plug-ins were blocked on this page:
-        </message>
-      </if>
+      <message name="IDS_BLOCKED_PLUGINS_TITLE" desc="Bubble info header text when a page is not allowed to display plug-ins.">
+        The following plug-ins were blocked on this page:
+      </message>
       <message name="IDS_BLOCKED_PLUGINS_MESSAGE" desc="Tooltip and message when a page is not allowed to display plug-ins.">
         Plug-ins were blocked on this page.
       </message>
@@ -14414,11 +14412,6 @@ Do you accept?
     </message>
     <message name="IDS_SUPERVISED_USER_WARN_INFOBAR_GO_BACK" desc="Label for the button that goes back to a 'safe' page.">
       Take me back!
-    </message>
-
-    <!-- Password generation strings -->
-    <message name="IDS_PASSWORD_GENERATION_ACCESSIBLE_TITLE" desc="The accessibility name of the popup asking users if they would like Chrome to generate a password for them.">
-      Password Suggestion
     </message>
 
     <!-- Identity internals strings -->

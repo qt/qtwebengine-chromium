@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "7.8",
+  "version": "7.12",
   "entries": [
     {
       "id": 1,
@@ -175,7 +175,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 11,
       "description": "Limit max texure size to 4096 on Macs with Intel GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -212,7 +216,11 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 14,
       "description": "Limit max texure size and cube map texture size to 4096 on Macs with AMD GPUs",
       "os": {
-        "type": "macosx"
+        "type": "macosx",
+        "version": {
+          "op": "<",
+          "value": "10.9"
+        }
       },
       "vendor_id": "0x1002",
       "features": [
@@ -1055,7 +1063,7 @@ LONG_STRING_CONST(
         "type": "android",
         "version": {
           "op": "<=",
-          "value": "5.0.0"
+          "value": "5.0.1"
         }
       },
       "gl_vendor": "NVIDIA.*",
@@ -1066,6 +1074,17 @@ LONG_STRING_CONST(
       },
       "features": [
         "disable_egl_khr_wait_sync"
+      ]
+    },
+    {
+      "id": 96,
+      "description": "glBindFramebuffer sometimes requires a glBegin/End to take effect",
+      "cr_bugs": [435786],
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "gl_begin_gl_end_on_fbo_change_to_backbuffer"
       ]
     }
   ]

@@ -201,6 +201,8 @@ public:
     void postMessageTimerFired(PostMessageTimer*);
     void dispatchMessageEventWithOriginCheck(SecurityOrigin* intendedTargetOrigin, PassRefPtrWillBeRawPtr<Event>, PassRefPtrWillBeRawPtr<ScriptCallStack>);
 
+    // FIXME: ScrollBehaviorSmooth is currently unsupported in PinchViewport.
+    // crbug.com/434497
     void scrollBy(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const;
     void scrollBy(double x, double y, const ScrollOptions&, ExceptionState&) const;
     void scrollTo(double x, double y, ScrollBehavior = ScrollBehaviorAuto) const;

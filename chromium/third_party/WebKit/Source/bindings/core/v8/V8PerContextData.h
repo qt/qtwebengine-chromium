@@ -88,8 +88,6 @@ public:
     V8NPObjectMap* v8NPObjectMap() { return &m_v8NPObjectMap; }
 
     void addCustomElementBinding(CustomElementDefinition*, PassOwnPtr<CustomElementBinding>);
-    void clearCustomElementBinding(CustomElementDefinition*);
-    CustomElementBinding* customElementBinding(CustomElementDefinition*);
 
     V8DOMActivityLogger* activityLogger() const { return m_activityLogger; }
     void setActivityLogger(V8DOMActivityLogger* activityLogger) { m_activityLogger = activityLogger; }
@@ -120,8 +118,8 @@ private:
     ScopedPersistent<v8::Context> m_context;
     ScopedPersistent<v8::Value> m_errorPrototype;
 
-    typedef WTF::HashMap<CustomElementDefinition*, OwnPtr<CustomElementBinding> > CustomElementBindingMap;
-    OwnPtr<CustomElementBindingMap> m_customElementBindings;
+    typedef Vector<OwnPtr<CustomElementBinding> > CustomElementBindingList;
+    CustomElementBindingList m_customElementBindings;
 
     // This is owned by a static hash map in V8DOMActivityLogger.
     V8DOMActivityLogger* m_activityLogger;

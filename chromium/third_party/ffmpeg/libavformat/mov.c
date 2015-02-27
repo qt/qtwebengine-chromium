@@ -355,7 +355,7 @@ static int mov_read_udta_string(MOVContext *c, AVIOContext *pb, MOVAtom atom)
 
     if (!key)
         return 0;
-    if (atom.size < 0)
+    if (atom.size < 0 || str_size >= INT_MAX/2)
         return AVERROR_INVALIDDATA;
 
     str_size = FFMIN3(sizeof(str)-1, str_size, atom.size);
@@ -1063,7 +1063,7 @@ static int mov_read_wave(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         st->codec->codec_id == AV_CODEC_ID_QDMC ||
         st->codec->codec_id == AV_CODEC_ID_SPEEX) {
         // pass all frma atom to codec, needed at least for QDMC and QDM2
-        av_free(st->codec->extradata);
+        av_freep(&st->codec->extradata);
         if (ff_get_extradata(st->codec, pb, atom.size) < 0)
             return AVERROR(ENOMEM);
     } else if (atom.size > 8) { /* to read frma, esds atoms */
@@ -1099,7 +1099,7 @@ static int mov_read_glbl(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         if (type == MKTAG('f','i','e','l') && size == atom.size)
             return mov_read_default(c, pb, atom);
     }
-    av_free(st->codec->extradata);
+    av_freep(&st->codec->extradata);
     if (ff_get_extradata(st->codec, pb, atom.size) < 0)
         return AVERROR(ENOMEM);
 
@@ -1124,7 +1124,7 @@ static int mov_read_dvc1(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return 0;
 
     avio_seek(pb, 6, SEEK_CUR);
-    av_free(st->codec->extradata);
+    av_freep(&st->codec->extradata);
     if ((ret = ff_get_extradata(st->codec, pb, atom.size - 7)) < 0)
         return ret;
 
@@ -1150,7 +1150,7 @@ static int mov_read_strf(MOVContext *c, AVIOContext *pb, MOVAtom atom)
         return AVERROR_INVALIDDATA;
 
     avio_skip(pb, 40);
-    av_free(st->codec->extradata);
+    av_freep(&st->codec->extradata);
     if (ff_get_extradata(st->codec, pb, atom.size - 40) < 0)
         return AVERROR(ENOMEM);
     return 0;
@@ -1453,7 +1453,7 @@ static void mov_parse_stsd_audio(MOVContext *c, AVIOContext *pb,
 
 static void mov_parse_stsd_subtitle(MOVContext *c, AVIOContext *pb,
                                     AVStream *st, MOVStreamContext *sc,
-                                    int size)
+                                    int64_t size)
 {
     // ttxt stsd contains display flags, justification, background
     // color, fonts, and default styles, so fake an atom to read it
@@ -1518,10 +1518,10 @@ static int mov_rewrite_dvd_sub_extradata(AVStream *st)
 
 static int mov_parse_stsd_data(MOVContext *c, AVIOContext *pb,
                                 AVStream *st, MOVStreamContext *sc,
-                                int size)
+                                int64_t size)
 {
     if (st->codec->codec_tag == MKTAG('t','m','c','d')) {
-        if (ff_get_extradata(st->codec, pb, size) < 0)
+        if ((int)size != size || ff_get_extradata(st->codec, pb, size) < 0)
             return AVERROR(ENOMEM);
         if (size > 16) {
             MOVStreamContext *tmcd_ctx = st->priv_data;
@@ -3172,6 +3172,12 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     MOVAtom a;
     int i;
 
+    if (c->atom_depth > 10) {
+        av_log(c->fc, AV_LOG_ERROR, "Atoms too deeply nested\n");
+        return AVERROR_INVALIDDATA;
+    }
+    c->atom_depth ++;
+
     if (atom.size < 0)
         atom.size = INT64_MAX;
     while (total_size + 8 <= atom.size && !avio_feof(pb)) {
@@ -3201,11 +3207,12 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
                 {
                     av_log(c->fc, AV_LOG_ERROR, "Broken file, trak/mdat not at top-level\n");
                     avio_skip(pb, -8);
+                    c->atom_depth --;
                     return 0;
                 }
             }
             total_size += 8;
-            if (a.size == 1) { /* 64 bit extended size */
+            if (a.size == 1 && total_size + 8 <= atom.size) { /* 64 bit extended size */
                 a.size = avio_rb64(pb) - 8;
                 total_size += 8;
             }
@@ -3237,13 +3244,16 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
             int64_t start_pos = avio_tell(pb);
             int64_t left;
             int err = parse(c, pb, a);
-            if (err < 0)
+            if (err < 0) {
+                c->atom_depth --;
                 return err;
+            }
             if (c->found_moov && c->found_mdat &&
                 ((!pb->seekable || c->fc->flags & AVFMT_FLAG_IGNIDX) ||
                  start_pos + a.size == avio_size(pb))) {
                 if (!pb->seekable || c->fc->flags & AVFMT_FLAG_IGNIDX)
                     c->next_root_atom = start_pos + a.size;
+                c->atom_depth --;
                 return 0;
             }
             left = a.size - avio_tell(pb) + start_pos;
@@ -3263,6 +3273,7 @@ static int mov_read_default(MOVContext *c, AVIOContext *pb, MOVAtom atom)
     if (total_size < atom.size && atom.size < 0x7ffff)
         avio_skip(pb, atom.size - total_size);
 
+    c->atom_depth --;
     return 0;
 }
 
@@ -3759,7 +3770,7 @@ static int mov_read_packet(AVFormatContext *s, AVPacket *pkt)
 #if CONFIG_DV_DEMUXER
         if (mov->dv_demux && sc->dv_audio_container) {
             avpriv_dv_produce_packet(mov->dv_demux, pkt, pkt->data, pkt->size, pkt->pos);
-            av_free(pkt->data);
+            av_freep(&pkt->data);
             pkt->size = 0;
             ret = avpriv_dv_get_packet(mov->dv_demux, pkt);
             if (ret < 0)

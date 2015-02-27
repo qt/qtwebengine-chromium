@@ -279,9 +279,7 @@ RenderWidgetHostViewAndroid::RenderWidgetHostViewAndroid(
       gesture_provider_(CreateGestureProviderConfig(), this),
       gesture_text_selector_(this),
       accelerated_surface_route_id_(0),
-      using_synchronous_compositor_(SynchronousCompositorImpl::FromID(
-                                        widget_host->GetProcess()->GetID(),
-                                        widget_host->GetRoutingID()) != NULL),
+      using_browser_compositor_(CompositorImpl::IsInitialized()),
       frame_evictor_(new DelegatedFrameEvictor(this)),
       locks_on_frame_count_(0),
       observing_root_window_(false),
@@ -670,7 +668,7 @@ void RenderWidgetHostViewAndroid::OnDidChangeBodyBackgroundColor(
 }
 
 void RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame(bool enabled) {
-  DCHECK(!using_synchronous_compositor_);
+  DCHECK(using_browser_compositor_);
   TRACE_EVENT1("cc", "RenderWidgetHostViewAndroid::OnSetNeedsBeginFrame",
                "enabled", enabled);
   if (enabled)
@@ -841,7 +839,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
     return;
   }
   base::TimeTicks start_time = base::TimeTicks::Now();
-  if (!using_synchronous_compositor_ && !IsSurfaceAvailableForCopy()) {
+  if (using_browser_compositor_ && !IsSurfaceAvailableForCopy()) {
     callback.Run(false, SkBitmap());
     return;
   }
@@ -853,7 +851,7 @@ void RenderWidgetHostViewAndroid::CopyFromCompositingSurface(
   gfx::Rect src_subrect_in_pixel =
       ConvertRectToPixel(device_scale_factor, src_subrect);
 
-  if (using_synchronous_compositor_) {
+  if (!using_browser_compositor_) {
     SynchronousCopyContents(src_subrect_in_pixel, dst_size_in_pixel, callback,
                             color_type);
     UMA_HISTOGRAM_TIMES("Compositing.CopyFromSurfaceTimeSynchronous",
@@ -1143,12 +1141,12 @@ void RenderWidgetHostViewAndroid::SetOverlayVideoMode(bool enabled) {
 bool RenderWidgetHostViewAndroid::SupportsAnimation() const {
   // The synchronous (WebView) compositor does not have a proper browser
   // compositor with which to drive animations.
-  return !using_synchronous_compositor_;
+  return using_browser_compositor_;
 }
 
 void RenderWidgetHostViewAndroid::SetNeedsAnimate() {
   DCHECK(content_view_core_);
-  DCHECK(!using_synchronous_compositor_);
+  DCHECK(using_browser_compositor_);
   content_view_core_->GetWindowAndroid()->SetNeedsAnimate();
 }
 
@@ -1178,7 +1176,7 @@ void RenderWidgetHostViewAndroid::OnSelectionEvent(
 
 scoped_ptr<TouchHandleDrawable> RenderWidgetHostViewAndroid::CreateDrawable() {
   DCHECK(content_view_core_);
-  if (using_synchronous_compositor_)
+  if (!using_browser_compositor_)
     return content_view_core_->CreatePopupTouchHandleDrawable();
 
   return scoped_ptr<TouchHandleDrawable>(new CompositedTouchHandleDrawable(
@@ -1285,7 +1283,7 @@ void RenderWidgetHostViewAndroid::RemoveLayers() {
 
 void RenderWidgetHostViewAndroid::RequestVSyncUpdate(uint32 requests) {
   // The synchronous compositor does not requre BeginFrame messages.
-  if (using_synchronous_compositor_)
+  if (!using_browser_compositor_)
     requests &= FLUSH_INPUT;
 
   bool should_request_vsync = !outstanding_vsync_requests_ && requests;
@@ -1330,8 +1328,12 @@ void RenderWidgetHostViewAndroid::SendBeginFrame(base::TimeTicks frame_time,
                "frame_time_us", frame_time.ToInternalValue());
   base::TimeTicks display_time = frame_time + vsync_period;
 
-  base::TimeTicks deadline =
-      display_time - host_->GetEstimatedBrowserCompositeTime();
+  // TODO(brianderson): Use adaptive draw-time estimation.
+  base::TimeDelta estimated_browser_composite_time =
+      base::TimeDelta::FromMicroseconds(
+          (1.0f * base::Time::kMicrosecondsPerSecond) / (3.0f * 60));
+
+  base::TimeTicks deadline = display_time - estimated_browser_composite_time;
 
   host_->Send(new ViewMsg_BeginFrame(
       host_->GetRoutingID(),
@@ -1375,9 +1377,8 @@ gfx::Rect RenderWidgetHostViewAndroid::GetBoundsInRootWindow() {
 gfx::GLSurfaceHandle RenderWidgetHostViewAndroid::GetCompositingSurface() {
   gfx::GLSurfaceHandle handle =
       gfx::GLSurfaceHandle(gfx::kNullPluginWindow, gfx::NULL_TRANSPORT);
-  if (CompositorImpl::IsInitialized()) {
-    handle.parent_client_id =
-        ImageTransportFactoryAndroid::GetInstance()->GetChannelID();
+  if (using_browser_compositor_) {
+    handle.parent_client_id = ImageTransportFactoryAndroid::GetChannelID();
   }
   return handle;
 }
@@ -1645,7 +1646,7 @@ void RenderWidgetHostViewAndroid::OnAttachCompositor() {
 
 void RenderWidgetHostViewAndroid::OnDetachCompositor() {
   DCHECK(content_view_core_);
-  DCHECK(!using_synchronous_compositor_);
+  DCHECK(using_browser_compositor_);
   RunAckCallbacks();
   overscroll_effect_.reset();
 }

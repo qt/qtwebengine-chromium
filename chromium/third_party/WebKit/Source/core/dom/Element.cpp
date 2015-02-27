@@ -78,8 +78,10 @@
 #include "core/editing/markup.h"
 #include "core/events/EventDispatcher.h"
 #include "core/events/FocusEvent.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/PinchViewport.h"
 #include "core/frame/Settings.h"
 #include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
@@ -802,6 +804,11 @@ IntRect Element::boundsInRootViewSpace()
         result.unite(quads[i].enclosingBoundingBox());
 
     result = view->contentsToRootView(result);
+
+    // FIXME: Cleanup pinch viewport coordinate translations. crbug.com/371902.
+    PinchViewport& pinchViewport = document().page()->frameHost().pinchViewport();
+    result = enclosingIntRect(pinchViewport.mainViewToViewportCSSPixels(result));
+
     return result;
 }
 
@@ -922,12 +929,13 @@ ALWAYS_INLINE void Element::setAttributeInternal(size_t index, const QualifiedNa
     }
 
     const Attribute& existingAttribute = elementData()->attributes().at(index);
+    AtomicString existingAttributeValue = existingAttribute.value();
     QualifiedName existingAttributeName = existingAttribute.name();
 
     if (!inSynchronizationOfLazyAttribute)
-        willModifyAttribute(existingAttributeName, existingAttribute.value(), newValue);
+        willModifyAttribute(existingAttributeName, existingAttributeValue, newValue);
 
-    if (newValue != existingAttribute.value()) {
+    if (newValue != existingAttributeValue) {
         // If there is an Attr node hooked to this attribute, the Attr::setValue() call below
         // will write into the ElementData.
         // FIXME: Refactor this so it makes some sense.
@@ -1368,8 +1376,6 @@ void Element::detach(const AttachContext& context)
     HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
     cancelFocusAppearanceUpdate();
     removeCallbackSelectors();
-    if (svgFilterNeedsLayerUpdate())
-        document().unscheduleSVGFilterLayerUpdateHack(*this);
     if (hasRareData()) {
         ElementRareData* data = elementRareData();
         data->clearPseudoElements();
@@ -1396,7 +1402,12 @@ void Element::detach(const AttachContext& context)
         if (ElementShadow* shadow = data->shadow())
             shadow->detach(context);
     }
+
     ContainerNode::detach(context);
+
+    ASSERT(needsAttach());
+    if (svgFilterNeedsLayerUpdate())
+        document().unscheduleSVGFilterLayerUpdateHack(*this);
 }
 
 bool Element::pseudoStyleCacheIsInvalid(const RenderStyle* currentStyle, RenderStyle* newStyle)
@@ -3236,44 +3247,6 @@ void Element::trace(Visitor* visitor)
     visitor->trace(m_elementData);
 #endif
     ContainerNode::trace(visitor);
-}
-
-v8::Handle<v8::Object> Element::wrap(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    if (isCustomElement())
-        return wrapCustomElement(creationContext, isolate);
-    return ContainerNode::wrap(creationContext, isolate);
-}
-
-v8::Handle<v8::Object> Element::wrapCustomElement(v8::Handle<v8::Object> creationContext, v8::Isolate* isolate)
-{
-    // It's possible that no one except for the new wrapper owns this object at
-    // this moment, so we have to prevent GC to collect this object until the
-    // object gets associated with the wrapper.
-    RefPtrWillBeRawPtr<Element> protect(this);
-
-    ASSERT(!DOMDataStore::containsWrapper(this, isolate));
-
-    ASSERT(!creationContext.IsEmpty());
-    v8::Handle<v8::Context> context = creationContext->CreationContext();
-
-    if (!isUpgradedCustomElement() || DOMWrapperWorld::world(context).isIsolatedWorld())
-        return ContainerNode::wrap(creationContext, isolate);
-
-    const WrapperTypeInfo* wrapperType = wrapperTypeInfo();
-    v8::Handle<v8::Object> wrapper = V8DOMWrapper::createWrapper(creationContext, wrapperType, toScriptWrappableBase(), isolate);
-    if (wrapper.IsEmpty())
-        return v8::Handle<v8::Object>();
-
-    V8PerContextData* perContextData = V8PerContextData::from(context);
-    if (!perContextData)
-        return wrapper;
-
-    CustomElementBinding* binding = perContextData->customElementBinding(customElementDefinition());
-
-    wrapper->SetPrototype(binding->prototype());
-
-    return V8DOMWrapper::associateObjectWithWrapper(isolate, this, wrapperType, wrapper);
 }
 
 } // namespace blink

@@ -526,6 +526,7 @@ TextRun InlineTextBox::constructTextRun(RenderStyle* style, const Font& font, St
     TextRun run(string, textPos(), expansion(), expansionBehavior(), direction(), dirOverride() || style->rtlOrdering() == VisualOrder, !renderer().canUseSimpleFontCodePath());
     run.setTabSize(!style->collapseWhiteSpace(), style->tabSize());
     run.setCharacterScanForCodePath(!renderer().canUseSimpleFontCodePath());
+    run.setUseComplexCodePath(!renderer().canUseSimpleFontCodePath());
 
     // Propagate the maximum length of the characters buffer to the TextRun, even when we're only processing a substring.
     run.setCharactersLength(maximumLength);
@@ -552,11 +553,11 @@ void InlineTextBox::showBox(int printedCharacters) const
     value = value.substring(start(), len());
     value.replaceWithLiteral('\\', "\\\\");
     value.replaceWithLiteral('\n', "\\n");
-    printedCharacters += fprintf(stderr, "%s\t%p", boxName(), this);
+    printedCharacters += fprintf(stderr, "%s %p", boxName(), this);
     for (; printedCharacters < showTreeCharacterOffset; printedCharacters++)
         fputc(' ', stderr);
     printedCharacters = fprintf(stderr, "\t%s %p", obj.renderName(), &obj);
-    const int rendererCharacterOffset = 24;
+    const int rendererCharacterOffset = 75;
     for (; printedCharacters < rendererCharacterOffset; printedCharacters++)
         fputc(' ', stderr);
     fprintf(stderr, "(%d,%d) \"%s\"\n", start(), start() + len(), value.utf8().data());

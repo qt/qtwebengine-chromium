@@ -169,7 +169,7 @@ WebInspector.TracingTimelineUIUtils.prototype = {
      */
     hiddenEmptyRecordsFilter: function()
     {
-        var hiddenEmptyRecords = [WebInspector.TimelineModel.RecordType.EventDispatch];
+        var hiddenEmptyRecords = [WebInspector.TimelineModel.RecordType.EventDispatch, WebInspector.TimelineModel.RecordType.UpdateCounters];
         return new WebInspector.TimelineRecordHiddenEmptyTypeFilter(hiddenEmptyRecords);
     },
 
@@ -247,6 +247,7 @@ WebInspector.TracingTimelineUIUtils._initEventStyles = function()
     eventStyles[recordTypes.EmbedderCallback] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Embedder Callback"), categories["scripting"]);
     eventStyles[recordTypes.DecodeImage] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Image Decode"), categories["painting"]);
     eventStyles[recordTypes.ResizeImage] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("Image Resize"), categories["painting"]);
+    eventStyles[recordTypes.UpdateCounters] = new WebInspector.TimelineRecordStyle(WebInspector.UIString("UpdateCounters"), categories["other"]);
     WebInspector.TracingTimelineUIUtils._eventStylesMap = eventStyles;
     return eventStyles;
 }

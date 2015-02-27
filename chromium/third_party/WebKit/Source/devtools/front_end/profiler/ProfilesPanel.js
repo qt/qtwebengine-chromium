@@ -449,7 +449,6 @@ WebInspector.ProfilesPanel = function()
     mainView.show(this.mainElement());
 
     this.profilesItemTreeElement = new WebInspector.ProfilesSidebarTreeElement(this);
-    this.sidebarTree.setFocusable(false);
     this.sidebarTree.appendChild(this.profilesItemTreeElement);
 
     this.profileViews = createElement("div");

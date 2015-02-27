@@ -133,6 +133,14 @@ FloatRect PinchViewport::visibleRectInDocument() const
     return pinchRect;
 }
 
+FloatRect PinchViewport::mainViewToViewportCSSPixels(const FloatRect& rect) const
+{
+    // Note, this is in CSS Pixels so we don't apply scale.
+    FloatRect rectInViewport = rect;
+    rectInViewport.moveBy(-location());
+    return rectInViewport;
+}
+
 void PinchViewport::scrollIntoView(const LayoutRect& rect)
 {
     if (!mainFrame() || !mainFrame()->view())
@@ -198,6 +206,9 @@ void PinchViewport::setScaleAndLocation(float scale, const FloatPoint& location)
         ScrollingCoordinator* coordinator = frameHost().page().scrollingCoordinator();
         ASSERT(coordinator);
         coordinator->scrollableAreaScrollLayerDidChange(this);
+
+        Document* document = mainFrame()->document();
+        document->enqueueScrollEventForNode(document);
 
         valuesChanged = true;
     }
