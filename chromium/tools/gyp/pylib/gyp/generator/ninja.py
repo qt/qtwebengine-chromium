@@ -1240,6 +1240,11 @@ class NinjaWriter:
       if self.flavor == 'win':
         # qmake will take care of the manifest
         ldflags = filter(lambda x: not x.lower().startswith('/manifest'), ldflags)
+        # replace the pdb file name in debug to prevent it from being overwritten by the release build
+        if self.config_name.lower().startswith('debug'):
+            if '/PDB:QtWebEngineCore.dll.pdb' in ldflags:
+                pdb_index = ldflags.index('/PDB:QtWebEngineCore.dll.pdb')
+                ldflags[pdb_index] = '/PDB:QtWebEngineCored.dll.pdb'
 
       # Replace "$!PRODUCT_DIR" with "$$PWD" in link flags (which might contain some -L directives).
       prefixed_lflags = [self.ExpandSpecial(f, '$$PWD') for f in ldflags]
