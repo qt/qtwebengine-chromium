@@ -52,7 +52,6 @@ class BrowserPluginGuestManager;
 class DateTimeChooserAndroid;
 class DownloadItem;
 class GeolocationDispatcherHost;
-class GeolocationServiceContext;
 class InterstitialPageImpl;
 class JavaScriptDialogManager;
 class ManifestManagerHost;
@@ -174,6 +173,10 @@ class CONTENT_EXPORT WebContentsImpl
       const ResourceRedirectDetails& details);
 
   WebContentsView* GetView() const;
+
+  GeolocationDispatcherHost* geolocation_dispatcher_host() {
+    return geolocation_dispatcher_host_.get();
+  }
 
   ScreenOrientationDispatcherHost* screen_orientation_dispatcher_host() {
     return screen_orientation_dispatcher_host_.get();
@@ -387,9 +390,8 @@ class CONTENT_EXPORT WebContentsImpl
       const std::vector<AXEventNotificationDetails>& details) override;
   RenderFrameHost* GetGuestByInstanceID(
       int browser_plugin_instance_id) override;
-  GeolocationServiceContext* GetGeolocationServiceContext() override;
 #if defined(OS_WIN)
-  gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
+  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
 #endif
 
   // RenderViewHostDelegate ----------------------------------------------------
@@ -1208,8 +1210,6 @@ class CONTENT_EXPORT WebContentsImpl
 
   // Whether the last JavaScript dialog shown was suppressed. Used for testing.
   bool last_dialog_suppressed_;
-
-  scoped_ptr<GeolocationServiceContext> geolocation_service_context_;
 
   scoped_ptr<GeolocationDispatcherHost> geolocation_dispatcher_host_;
 

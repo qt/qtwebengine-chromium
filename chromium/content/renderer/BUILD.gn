@@ -31,17 +31,15 @@ source_set("renderer") {
     "//content/common:mojo_bindings",
     "//content/public/child:child_sources",
     "//content/public/common:common_sources",
-    "//content/public/common:mojo_bindings",
-    "//device/battery:mojo_bindings",
     "//gin",
     "//gpu",
     "//gpu/command_buffer/client:gles2_interface",
     "//jingle:jingle_glue",
     "//media",
     "//media/blink",
-    "//mojo/edk/js",
+    "//mojo/bindings/js",
     "//mojo/environment:chromium",
-    "//mojo/public/js",
+    "//mojo/public/js/bindings",
     "//mojo/public/interfaces/application",
     "//net",
     "//skia",
@@ -185,7 +183,7 @@ source_set("renderer") {
     ]
   }
 
-  if (enable_print_preview) {
+  if (printing_mode == 1) {
     deps += [ "//printing" ]
   }
 
