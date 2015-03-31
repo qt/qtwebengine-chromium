@@ -49,7 +49,7 @@ import sys
 
 from idl_definitions import Visitor
 from idl_reader import IdlReader
-from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, idl_filename_to_component, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl
+from utilities import get_file_contents, read_file_to_list, idl_filename_to_interface_name, idl_filename_to_component, write_pickle_file, get_interface_extended_attributes_from_idl, is_callback_interface_from_idl, abs
 
 module_path = os.path.dirname(__file__)
 source_path = os.path.normpath(os.path.join(module_path, os.pardir, os.pardir))
@@ -98,6 +98,13 @@ def include_path(idl_filename, implemented_as=None):
     platform-independent.
     """
     relative_dir = relative_dir_posix(idl_filename)
+
+    # The generated relative include path might be wrong if the relative path
+    # points to a parent directory in case of shadow build. To avoid jumbled
+    # relative paths use absolute path instead.
+    if relative_dir.startswith(".."):
+        relative_dir = abs(os.path.dirname(idl_filename))
+        relative_dir = relative_dir.replace(os.path.sep, posixpath.sep)
 
     # IDL file basename is used even if only a partial interface file
     idl_file_basename, _ = os.path.splitext(os.path.basename(idl_filename))
