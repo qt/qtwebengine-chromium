@@ -1,3 +1,0 @@
-com.android.webview
-com.android.webview.chromium
-com.android.org.chromium
