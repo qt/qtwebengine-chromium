@@ -6148,7 +6148,6 @@ typedef char GLchar;
 #endif
 
 #ifndef GL_VERSION_1_5
-#ifndef BUILDING_CHROMIUM
 /* GL types for handling large vertex buffer objects */
 #ifdef _WIN64
 typedef signed   long long int GLintptr;
@@ -6156,7 +6155,6 @@ typedef signed   long long int GLsizeiptr;
 #else
 typedef signed   long  int     GLintptr;
 typedef signed   long  int     GLsizeiptr;
-#endif
 #endif
 #endif
 
