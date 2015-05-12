@@ -88,7 +88,8 @@
         }],
         ['OS!="win" and remove_webcore_debug_symbols==1', {
           # Remove -g from all targets defined here.
-          'cflags!': ['-g'],
+          'cflags!': ['-g', '-gdwarf-4', '-O0'],
+          'cflags': ['-Os'],
         }],
         ['gcc_version>=46', {
           # Disable warnings about c++0x compatibility, as some names (such as
