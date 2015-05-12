@@ -91,7 +91,8 @@
         }],
         ['OS!="win" and remove_webcore_debug_symbols==1', {
           # Remove -g from all targets defined here.
-          'cflags!': ['-g'],
+          'cflags!': ['-g', '-gdwarf-4', '-O0'],
+          'cflags': ['-Os'],
         }],
         # Only enable the blink_gc_plugin when using clang and chrome plugins.
         ['blink_gc_plugin==1 and clang==1 and clang_use_chrome_plugins==1', {
