@@ -3347,6 +3347,12 @@ int ssl3_check_cert_and_algorithm(SSL *s)
 		SSLerr(SSL_F_SSL3_CHECK_CERT_AND_ALGORITHM,SSL_R_MISSING_DH_RSA_CERT);
 		goto f_err;
 		}
+        else if ((alg_k & (SSL_kEDH|SSL_kDHr|SSL_kDHd)) &&
+		(dh == NULL || DH_size(dh)*8 < 1024))
+		{
+		SSLerr(SSL_F_SSL3_CHECK_CERT_AND_ALGORITHM,SSL_R_WEAK_DH_GROUP);
+		goto f_err;
+		}
 #ifndef OPENSSL_NO_DSA
 	else if ((alg_k & SSL_kDHd) && !has_bits(i,EVP_PK_DH|EVP_PKS_DSA))
 		{

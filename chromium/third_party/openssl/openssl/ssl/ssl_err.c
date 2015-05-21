@@ -596,6 +596,7 @@ static ERR_STRING_DATA SSL_str_reasons[]=
 {ERR_REASON(SSL_R_UNSUPPORTED_SSL_VERSION),"unsupported ssl version"},
 {ERR_REASON(SSL_R_UNSUPPORTED_STATUS_TYPE),"unsupported status type"},
 {ERR_REASON(SSL_R_USE_SRTP_NOT_NEGOTIATED),"use srtp not negotiated"},
+{ERR_REASON(SSL_R_WEAK_DH_GROUP)         ,"weak dh group"},
 {ERR_REASON(SSL_R_WRITE_BIO_NOT_SET)     ,"write bio not set"},
 {ERR_REASON(SSL_R_WRONG_CIPHER_RETURNED) ,"wrong cipher returned"},
 {ERR_REASON(SSL_R_WRONG_MESSAGE_TYPE)    ,"wrong message type"},

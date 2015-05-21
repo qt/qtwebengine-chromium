@@ -50,3 +50,5 @@ patch -p4 < $patches_dir/nssrwlock.patch
 patch -p4 < $patches_dir/paddingextvalue.patch
 
 patch -p4 < $patches_dir/reorderextensions.patch
+
+patch -p2 < $patches_dir/dh1024.patch
