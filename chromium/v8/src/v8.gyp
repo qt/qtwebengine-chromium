@@ -35,6 +35,7 @@
     'v8_extra_library_files%': [],
     'v8_experimental_extra_library_files%': [],
     'mksnapshot_exec': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)mksnapshot<(EXECUTABLE_SUFFIX)',
+    'remove_v8base_debug_symbols%': 0,
   },
   'includes': ['../gypfiles/toolchain.gypi', '../gypfiles/features.gypi'],
   'targets': [
@@ -1195,6 +1196,9 @@
         'zone-containers.h',
       ],
       'conditions': [
+        ['OS!="win" and remove_v8base_debug_symbols==1', {
+          'cflags!': ['-g', '-gdwarf-4'],
+        }],
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
         }, {
