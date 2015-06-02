@@ -30,6 +30,7 @@
     'icu_use_data_file_flag%': 0,
     'v8_code': 1,
     'v8_random_seed%': 314159265,
+    'remove_v8base_debug_symbols%': 0,
   },
   'includes': ['../../build/toolchain.gypi', '../../build/features.gypi'],
   'targets': [
@@ -859,6 +860,9 @@
         '../../src/third_party/fdlibm/fdlibm.h',
       ],
       'conditions': [
+        ['OS!="win" and remove_v8base_debug_symbols==1', {
+          'cflags!': ['-g', '-gdwarf-4'],
+        }],
         ['want_separate_host_toolset==1', {
           'toolsets': ['host', 'target'],
         }, {
