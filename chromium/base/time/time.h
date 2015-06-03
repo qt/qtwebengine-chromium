@@ -50,6 +50,11 @@
 // For FILETIME in FromFileTime, until it moves to a new converter class.
 // See TODO(iyengar) below.
 #include <windows.h>
+
+#ifdef max
+#  undef max
+#  undef min
+#endif
 #endif
 
 #include <limits>
