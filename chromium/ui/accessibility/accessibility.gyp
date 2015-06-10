@@ -59,14 +59,16 @@
         'platform/ax_platform_node_delegate.h',
         'platform/ax_platform_node_mac.h',
         'platform/ax_platform_node_mac.mm',
-        'platform/ax_platform_node_win.h',
-        'platform/ax_platform_node_win.cc',
       ],
       'conditions': [
-        ['OS=="win"', {
+        ['OS=="win" and use_qt==0', {
           'dependencies': [
             '../../third_party/iaccessible2/iaccessible2.gyp:iaccessible2'
           ],
+          'sources': [
+            'platform/ax_platform_node_win.h',
+            'platform/ax_platform_node_win.cc',
+          ]
         }],
         ['OS=="linux" and chromeos==0 and use_x11==1 and use_qt==0', {
           'dependencies': [
