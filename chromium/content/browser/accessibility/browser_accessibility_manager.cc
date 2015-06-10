@@ -87,7 +87,7 @@ ui::AXTreeUpdate MakeAXTreeUpdate(
 }
 
 BrowserAccessibility* BrowserAccessibilityFactory::Create() {
-#if defined(OS_ANDROID) && defined(USE_AURA)
+#if (defined(OS_ANDROID) && defined(USE_AURA)) || defined(TOOLKIT_QT)
   return nullptr;
 #else
   return BrowserAccessibility::Create();
