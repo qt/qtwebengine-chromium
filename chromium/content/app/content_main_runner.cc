@@ -79,7 +79,9 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/trace_event_etw_export_win.h"
+#if !defined(TOOLKIT_QT)
 #include "ui/base/win/atl_module.h"
+#endif
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -452,7 +454,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     base::EnableTerminationOnOutOfMemory();
 #if defined(OS_WIN)
     RegisterInvalidParamHandler();
+#if !defined(TOOLKIT_QT)
     ui::win::CreateATLModuleIfNeeded();
+#endif
 
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
