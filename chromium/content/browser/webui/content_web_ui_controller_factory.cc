@@ -38,7 +38,9 @@ WebUI::TypeID ContentWebUIControllerFactory::GetWebUIType(
       url.host_piece() == kChromeUIIndexedDBInternalsHost ||
       url.host_piece() == kChromeUIMediaInternalsHost ||
       url.host_piece() == kChromeUIServiceWorkerInternalsHost ||
+#if !defined(TOOLKIT_QT)
       url.host_piece() == kChromeUIAccessibilityHost ||
+#endif
       url.host_piece() == kChromeUIAppCacheInternalsHost ||
       url.host_piece() == kChromeUINetworkErrorsListingHost) {
     return const_cast<ContentWebUIControllerFactory*>(this);
@@ -69,8 +71,10 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new IndexedDBInternalsUI(web_ui);
   if (url.host_piece() == kChromeUIMediaInternalsHost)
     return new MediaInternalsUI(web_ui);
+#if !defined(TOOLKIT_QT)
   if (url.host_piece() == kChromeUIAccessibilityHost)
     return new AccessibilityUI(web_ui);
+#endif
   if (url.host_piece() == kChromeUIServiceWorkerInternalsHost)
     return new ServiceWorkerInternalsUI(web_ui);
   if (url.host_piece() == kChromeUINetworkErrorsListingHost)
