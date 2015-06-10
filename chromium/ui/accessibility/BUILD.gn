@@ -67,8 +67,6 @@ component("accessibility") {
       "platform/ax_platform_node_delegate.h",
       "platform/ax_platform_node_mac.h",
       "platform/ax_platform_node_mac.mm",
-      "platform/ax_platform_node_win.cc",
-      "platform/ax_platform_node_win.h",
     ]
   }
 
@@ -84,9 +82,13 @@ component("accessibility") {
     "//ui/strings",
   ]
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     public_deps += [ "//third_party/iaccessible2" ]
     libs = [ "oleacc.lib" ]
+    sources += [
+      "platform/ax_platform_node_win.cc",
+      "platform/ax_platform_node_win.h",
+    ]
   }
 
   if (is_mac) {
