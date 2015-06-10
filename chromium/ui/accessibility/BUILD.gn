@@ -165,7 +165,7 @@ jumbo_component("accessibility") {
     "//ui/strings",
   ]
 
-  if (is_win) {
+  if (is_win && has_native_accessibility) {
     public_deps += [ "//third_party/iaccessible2" ]
     libs = [
       "oleacc.lib",
