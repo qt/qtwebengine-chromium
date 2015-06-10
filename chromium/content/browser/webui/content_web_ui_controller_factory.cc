@@ -69,8 +69,10 @@ WebUIController* ContentWebUIControllerFactory::CreateWebUIControllerForURL(
     return new IndexedDBInternalsUI(web_ui);
   if (url.host_piece() == kChromeUIMediaInternalsHost)
     return new MediaInternalsUI(web_ui);
+#if !defined(TOOLKIT_QT)
   if (url.host_piece() == kChromeUIAccessibilityHost)
     return new AccessibilityUI(web_ui);
+#endif
   if (url.host_piece() == kChromeUIServiceWorkerInternalsHost)
     return new ServiceWorkerInternalsUI(web_ui);
   if (url.host_piece() == kChromeUINetworkErrorsListingHost)

@@ -38,7 +38,7 @@ bool BrowserAccessibilityEvent::FailedToSend(Result result) {
   return true;
 }
 
-#if !defined(OS_WIN)
+#if !defined(OS_WIN) || defined(TOOLKIT_QT)
 // static
 BrowserAccessibilityEvent* BrowserAccessibilityEvent::Create(
     Source source,

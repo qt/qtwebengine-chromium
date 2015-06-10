@@ -74,7 +74,9 @@
 #include "base/trace_event/trace_event_etw_export_win.h"
 #include "base/win/process_startup_helper.h"
 #include "sandbox/win/src/sandbox_types.h"
+#if !defined(TOOLKIT_QT)
 #include "ui/base/win/atl_module.h"
+#endif
 #include "ui/display/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/allocator/allocator_shim.h"
@@ -538,7 +540,9 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     base::EnableTerminationOnOutOfMemory();
 #if defined(OS_WIN)
     base::win::RegisterInvalidParamHandler();
+#if !defined(TOOLKIT_QT)
     ui::win::CreateATLModuleIfNeeded();
+#endif
 
     sandbox_info_ = *params.sandbox_info;
 #else  // !OS_WIN
