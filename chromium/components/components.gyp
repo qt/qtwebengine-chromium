@@ -9,6 +9,20 @@
     # _mac.h or _mac.cc are only compiled on MacOSX).
     'chromium_code': 1,
   },
+  'conditions': [
+  ['use_qt==1', {
+    'includes': [
+      'device_event_log.gypi',
+      'devtools_discovery.gypi',
+      'devtools_http_handler.gypi',
+      'error_page.gypi',
+      'keyed_service.gypi',
+      'pref_registry.gypi',
+      'visitedlink.gypi',
+      'web_cache.gypi',
+      'user_prefs.gypi',
+    ],
+  }, {
   'includes': [
     'about_handler.gypi',
     'auto_login_parser.gypi',
@@ -187,4 +201,6 @@
       ],
     }]
   ],
+  }],
+],
 }
