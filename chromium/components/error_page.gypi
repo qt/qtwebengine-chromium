@@ -15,7 +15,6 @@
         '../url/url.gyp:url_lib',
         '../ui/base/ui_base.gyp:ui_base',
         'components_strings.gyp:components_strings',
-        'offline_pages',
         'url_formatter/url_formatter.gyp:url_formatter',
       ],
       'include_dirs': [
