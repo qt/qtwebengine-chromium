@@ -786,6 +786,7 @@ void DevToolsHttpHandler::ServerStarted(
   server_wrapper_ = std::move(server_wrapper);
   socket_factory_ = std::move(socket_factory);
   server_ip_address_ = std::move(ip_address);
+  delegate_->Initialized(server_ip_address_.get());
 }
 
 void DevToolsHttpHandler::SendJson(int connection_id,
