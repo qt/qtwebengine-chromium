@@ -806,6 +806,7 @@ void DevToolsHttpHandler::ServerStarted(
   server_wrapper_ = server_wrapper;
   socket_factory_ = socket_factory;
   server_ip_address_.swap(ip_address);
+  delegate_->Initialized(server_ip_address_.get());
 }
 
 void ServerWrapper::WriteActivePortToUserProfile(
