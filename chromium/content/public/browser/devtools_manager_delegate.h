@@ -17,6 +17,10 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace net {
+class IPEndPoint;
+}
+
 namespace content {
 
 class WebContents;
@@ -58,6 +62,8 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
 
   // Returns frontend resource data by |path|.
   virtual std::string GetFrontendResource(const std::string& path);
+
+  virtual void Initialized(const net::IPEndPoint* ) { }
 
   virtual ~DevToolsManagerDelegate();
 };
