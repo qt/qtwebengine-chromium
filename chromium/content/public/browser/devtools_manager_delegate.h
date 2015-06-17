@@ -17,6 +17,10 @@ namespace base {
 class DictionaryValue;
 }
 
+namespace net {
+class IPEndPoint;
+}
+
 namespace content {
 
 class WebContents;
@@ -75,6 +79,8 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
   // the Lab testing). If you want to return true here, please get security
   // clearance from the devtools owners.
   virtual bool IsBrowserTargetDiscoverable();
+
+  virtual void Initialized(const net::IPEndPoint* ) { }
 
   virtual ~DevToolsManagerDelegate();
 };
