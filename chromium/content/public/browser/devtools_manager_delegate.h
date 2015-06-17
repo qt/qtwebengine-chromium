@@ -15,6 +15,10 @@
 #include "content/public/browser/devtools_agent_host.h"
 #include "url/gurl.h"
 
+namespace net {
+class IPEndPoint;
+}
+
 namespace content {
 
 class DevToolsAgentHostClientChannel;
@@ -156,6 +160,8 @@ class CONTENT_EXPORT DevToolsManagerDelegate {
   // the Lab testing). If you want to return true here, please get security
   // clearance from the devtools owners.
   virtual bool IsBrowserTargetDiscoverable();
+
+  virtual void Initialized(const net::IPEndPoint* ) { }
 
   using AcceptCallback =
       base::OnceCallback<void(DevToolsManagerDelegate::AcceptConnectionResult)>;
